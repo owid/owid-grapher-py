@@ -30,6 +30,7 @@ class Chart:
         self.y: Optional[str] = None
         self.c: Optional[str] = None
         self.time_type = TimeType.YEAR
+        self.selection: Optional[List[str]] = None
 
     def encode(
         self, x: Optional[str] = None, y: Optional[str] = None, c: Optional[str] = None
@@ -50,9 +51,13 @@ class Chart:
 
         return self
 
-    def label(self, title: str = "", subtitle: str = "") -> "Chart":
+    def label(
+        self, title: str = "", subtitle: str = "", source_desc: str = "", note: str = ""
+    ) -> "Chart":
         self.config.title = title
         self.config.subtitle = subtitle
+        self.config.source_desc = source_desc
+        self.config.note = note
         return self
 
     def mark_scatter(self) -> "Chart":
@@ -73,9 +78,28 @@ class Chart:
             self.config.type = "DiscreteBar"
         return self
 
-    def interact(self, allow_relative: Optional[bool] = None) -> "Chart":
-        if allow_relative:
+    def interact(
+        self,
+        allow_relative: Optional[bool] = None,
+        scale_control: Optional[bool] = None,
+        entity_control: Optional[bool] = None,
+    ) -> "Chart":
+        if allow_relative is not None:
             self.config.hide_relative_toggle = False
+
+        if scale_control is not None:
+            self.config.y_axis = {
+                "scaleType": "linear",
+                "canChangeScaleType": scale_control,
+            }
+
+        if entity_control is not None:
+            self.config.hide_entity_controls = not entity_control
+
+        return self
+
+    def select(self, entities: List[str]) -> "Chart":
+        self.selection = entities
         return self
 
     def _repr_html_(self):
@@ -100,6 +124,7 @@ class Chart:
             c=self.c,
             time_type=self.time_type,
             chart_type=self.config.type,
+            selection=self.selection,
         )
 
 
@@ -117,6 +142,8 @@ class ChartConfig:
     tab: str = "chart"
     title: str = ""
     subtitle: str = ""
+    note: str = ""
+    source_desc: str = ""
     hide_logo: bool = True
     is_published: bool = True
     type: ChartType = "LineChart"
@@ -125,6 +152,7 @@ class ChartConfig:
     hide_entity_controls: bool = True
     hide_relative_toggle: bool = True
     stack_mode: Literal["relative", "absolute"] = "absolute"
+    y_axis: dict = field(default_factory=dict)
 
     def auto_improve(self):
         if self.title and self.type == "LineChart":
@@ -224,6 +252,7 @@ class DataConfig:
         c: Optional[str] = None,
         time_type: "TimeType" = TimeType.YEAR,
         chart_type: ChartType = "LineChart",
+        selection: Optional[List[str]] = None,
     ) -> "DataConfig":
         # reshape tidy data into (year, entity, variable, value) form
         if chart_type == "LineChart":
@@ -236,7 +265,14 @@ class DataConfig:
         df = df.dropna()
 
         dataset = Dataset.from_frame(df, time_type)
-        selected_data = [{"entityId": e.id} for e in dataset.entity_key.values()]
+        entities = dataset.entity_key.values()
+        if selection is None:
+            selected_data = [{"entityId": e.id} for e in entities]
+        else:
+            selected_data = [
+                {"entityId": e.id} for e in entities if e.name in selection
+            ]
+
         return DataConfig(
             owid_dataset=dataset,
             dimensions=Dimension.from_dataset(dataset),
