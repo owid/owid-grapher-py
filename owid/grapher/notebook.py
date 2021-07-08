@@ -60,14 +60,13 @@ def translate_config(config: dict, data: pd.DataFrame) -> str:
 def translate_line_chart(config: dict, data: pd.DataFrame) -> str:
     encoding = _gen_encoding(data)
     selection = _gen_selection(config, data)
+    labels = _gen_labels(config)
     interaction = _gen_interaction(config, data)
 
     return f"""
 grapher.Chart(
     data
-).encode(
-    {encoding}
-){selection}{interaction}
+){encoding}{selection}{labels}{interaction}
 """.strip()
 
 
@@ -83,8 +82,12 @@ def _gen_encoding(data: pd.DataFrame) -> str:
     elif len(data.variable.unique()) > 1:
         c = "variable"
 
-    encoding = f'x="{x}", y="value"' + (f', c="{c}"' if c else "")
-    return encoding
+    parts = [f'x="{x}"', 'y="value"']
+    if c:
+        parts.append(f'c="{c}')
+    encoding = ",\n    ".join(parts)
+
+    return f".encode(\n    {encoding}\n)"
 
 
 def _gen_selection(config: dict, data: pd.DataFrame) -> str:
@@ -104,7 +107,7 @@ def _gen_selection(config: dict, data: pd.DataFrame) -> str:
 def _gen_interaction(config: dict, data: pd.DataFrame) -> str:
     parts = []
 
-    scale_control = config["yAxis"].get("canChangeScaleType")
+    scale_control = config.get("yAxis", {}).get("canChangeScaleType")
     if scale_control is not None:
         parts.append(f"scale_control={scale_control}")
 
@@ -122,11 +125,11 @@ def _gen_labels(config: dict) -> str:
     to_snake = {"sourceDesc": "source_desc"}
 
     labels = {}
-    for label in ["title", "subtitle", "note", "sourceDesc"]:
+    for label in ["title", "subtitle", "sourceDesc", "note"]:
         if config.get(label):
             labels[to_snake.get(label, label)] = config[label]
 
-    if not config:
+    if not labels:
         return ""
 
     return (
