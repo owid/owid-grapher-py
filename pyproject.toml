@@ -3,6 +3,7 @@ name = "owid-grapher-py"
 version = "0.1.0"
 description = "OWID charts for rendering in Jupyter notebooks."
 authors = ["Lars Yencken <lars@yencken.org>"]
+packages = [{ include = "owid" }]
 
 [tool.poetry.dependencies]
 python = "^3.9"
