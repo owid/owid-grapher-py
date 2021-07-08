@@ -71,3 +71,9 @@ Chart(df).encode(
 # enable relative mode toggle
 Chart(...).interact(relative=True)
 ```
+
+## How it works
+
+OWID's grapher JS library has an internal JSON config format that all chart are created from. When you create a chart object, you are building up this JSON config. You can see the raw config by typing `.export()` on one of your chart objects in the notebook.
+
+When Jupyter asks to display the chart object (calling `chart._repr_html_()`), we return an html snippet containing an iframe and some js to inject dynamic iframe contents equivalent to a pre-prepared chart on the Our World In Data site. Neat, huh?
