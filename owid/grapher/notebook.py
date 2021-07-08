@@ -8,12 +8,17 @@
 Automatically generating notebooks from graphers.
 """
 
-from typing import Optional
+from os.path import join, isdir
+from os import mkdir
+from typing import Optional, Iterator
+import json
 
-import jsonschema
+# import jsonschema
 import pandas as pd
+import nbformat as nbf
+import click
 
-from owid.site import get_owid_data
+from owid.site import get_owid_data, owid_data_to_frame
 
 # all the types of charts we know how to translate back to python
 WHITELIST_SCHEMA = {
@@ -47,7 +52,7 @@ WHITELIST_SCHEMA = {
 
 def translate_config(config: dict, data: pd.DataFrame) -> str:
     "Turn a grapher config into a python string describing the chart."
-    jsonschema.validate(config, WHITELIST_SCHEMA)
+    # jsonschema.validate(config, WHITELIST_SCHEMA)
 
     tab = config.get("tab", "LineChart")
 
@@ -84,7 +89,7 @@ def _gen_encoding(data: pd.DataFrame) -> str:
 
     parts = [f'x="{x}"', 'y="value"']
     if c:
-        parts.append(f'c="{c}')
+        parts.append(f'c="{c}"')
     encoding = ",\n    ".join(parts)
 
     return f".encode(\n    {encoding}\n)"
@@ -137,3 +142,82 @@ def _gen_labels(config: dict) -> str:
         + ",\n    ".join(f'{k}="{v}"' for k, v in labels.items())
         + "\n)"
     )
+
+
+def generate_notebook(config: dict, path: str) -> None:
+    "Generate a jupyter notebook for the given config in the provided folder."
+    owid_data = get_owid_data(config)
+    data = owid_data_to_frame(owid_data)
+    py = translate_config(config, data)
+
+    slug = config["slug"]
+    title = config["title"]
+    save_to_notebook(slug, title, py, path)
+
+    data_file = join(path, "_data", f"{slug}.csv")
+    data.to_csv(data_file, index=False)
+
+
+def save_to_notebook(slug: str, title: str, py: str, path: str) -> None:
+    nb_file = join(path, f"{slug}.ipynb")
+
+    nb = _new_notebook(slug, title, py)
+
+    with open(nb_file, "w") as ostream:
+        nbf.write(nb, ostream)
+
+
+def _new_notebook(slug: str, title: str, py: str):
+    nb = nbf.v4.new_notebook()
+
+    cells = []
+
+    if title:
+        cells.append(nbf.v4.new_markdown_cell(f"# {title}"))
+
+    cells.append(
+        nbf.v4.new_code_cell("import pandas as pd\n" "from owid impor grapher")
+    )
+
+    cells.append(nbf.v4.new_code_cell(f'data = pd.read_csv("_data/{slug}.csv")'))
+
+    cells.append(nbf.v4.new_code_cell(py))
+
+    nb["cells"] = cells
+
+    return nb
+
+
+@click.command()
+@click.argument("input_file")
+@click.argument("dest_path")
+def main(input_file, dest_path):
+    """
+    Take a large list of configs in JSONL format, and attempt to render as many as we can to
+    notebooks.
+    """
+    data_folder = join(dest_path, "_data")
+    if not isdir(data_folder):
+        mkdir(data_folder)
+
+    i = 0
+    for total, config in enumerate(iter_jsonl(input_file), 1):
+        slug = config["slug"]
+        try:
+            generate_notebook(config, dest_path)
+            i += 1
+            print(click.style(f"✓ [{i}/{total}] {slug}", fg="green"))
+        except:  # noqa
+            print(f"✗ [{i}/{total}] {slug}")
+
+    print(f"Generated {i} notebooks successfully")
+
+
+def iter_jsonl(input_file: str) -> Iterator[dict]:
+    with open(input_file) as istream:
+        for line in istream:
+            yield json.loads(line)
+
+
+if __name__ == "__main__":
+    main()

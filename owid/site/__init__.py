@@ -41,7 +41,10 @@ def get_chart_data(url: str) -> pd.DataFrame:
     "Fetch the data from an OWID chart page as a data frame."
     config = get_chart_config(url)
     owid_data = get_owid_data(config)
+    return owid_data_to_frame(owid_data)
 
+
+def owid_data_to_frame(owid_data: dict) -> pd.DataFrame:
     entity_map = {int(k): v["name"] for k, v in owid_data["entityKey"].items()}
     frames = []
     for variable in owid_data["variables"].values():
