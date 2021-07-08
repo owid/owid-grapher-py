@@ -6,6 +6,12 @@ _Experimental grapher package for use in Jupyter notebooks._
 
 This package relies on internal APIs that may not be supported in future, so please consider it experimental.
 
+## Installing
+
+```
+pip install git+https://github.com/owid/owid-grapher-py
+```
+
 ## How to use
 
 The package operates off data frames, and uses an Altair-like format on top of data frames. Not all features of grapher
