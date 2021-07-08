@@ -136,7 +136,7 @@ def _gen_labels(config: dict) -> str:
     labels = {}
     for label in ["title", "subtitle", "sourceDesc", "note"]:
         if config.get(label):
-            labels[to_snake.get(label, label)] = config[label]
+            labels[to_snake.get(label, label)] = " ".join(config[label].split())
 
     if not labels:
         return ""
@@ -188,7 +188,9 @@ def _new_notebook(slug: str, title: str, py: str):
         nbf.v4.new_code_cell("import pandas as pd\n" "from owid import grapher")
     )
 
-    cells.append(nbf.v4.new_code_cell(f'data = pd.read_csv("_data/{slug}.csv")'))
+    cells.append(
+        nbf.v4.new_code_cell(f'data = pd.read_csv("_data/{slug}.csv")\ndata.head()')
+    )
 
     cells.append(nbf.v4.new_code_cell(py))
 
