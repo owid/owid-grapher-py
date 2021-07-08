@@ -2,12 +2,13 @@
 #  Makefile
 #
 
+
 include default.mk
 
-unittest:
-	@echo '==> Running unit tests'
-	@PYTHONPATH=. poetry run pytest
+SRC = owid tests
 
+# have to customise this because we're using a namespace package
 check-typing:
 	@echo '==> Checking types'
-	@pyright
+	poetry run mypy owid
+	poetry run mypy tests
