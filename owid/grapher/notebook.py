@@ -210,7 +210,7 @@ def main(input_file, dest_path):
         mkdir(data_folder)
 
     i = 0
-    for total, config in enumerate(iter_jsonl(input_file), 1):
+    for total, config in enumerate(iter_published(input_file), 1):
         slug = config["slug"]
         try:
             generate_notebook(config, dest_path)
@@ -220,6 +220,14 @@ def main(input_file, dest_path):
             print(f"✗ [{i}/{total}] {slug}")
 
     print(f"Generated {i} notebooks successfully")
+
+
+def iter_published(input_file: str) -> Iterator[dict]:
+    for config in iter_jsonl(input_file):
+        if not config.get("isPublished") or not config["slug"]:
+            continue
+
+        yield config
 
 
 def iter_jsonl(input_file: str) -> Iterator[dict]:
