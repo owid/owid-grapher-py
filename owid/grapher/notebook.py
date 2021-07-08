@@ -173,6 +173,11 @@ def save_to_notebook(slug: str, title: str, py: str, path: str) -> None:
 
 def _new_notebook(slug: str, title: str, py: str):
     nb = nbf.v4.new_notebook()
+    nb["metadata"]["kernelspec"] = {
+        "display_name": "Python 3 (ipykernel)",
+        "language": "python",
+        "name": "python3",
+    }
 
     cells = []
 
@@ -180,7 +185,7 @@ def _new_notebook(slug: str, title: str, py: str):
         cells.append(nbf.v4.new_markdown_cell(f"# {title}"))
 
     cells.append(
-        nbf.v4.new_code_cell("import pandas as pd\n" "from owid impor grapher")
+        nbf.v4.new_code_cell("import pandas as pd\n" "from owid import grapher")
     )
 
     cells.append(nbf.v4.new_code_cell(f'data = pd.read_csv("_data/{slug}.csv")'))
