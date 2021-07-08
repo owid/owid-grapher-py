@@ -14,37 +14,43 @@ pip install git+https://github.com/owid/owid-grapher-py
 
 ## How to use
 
-The package operates off data frames, and uses an Altair-like format on top of data frames. Not all features of grapher
-
-### Chart types
-
-#### Line chart (`mark_line()`)
+Get your data into a tidy data frame, then wrap it in a chart object and explain what marks you want and how to encode the dimensions you have (inspired by Altair).
 
 ```python
 from owid.grapher import Chart
 
-# line charts are the default, so you can plot minimally
-Chart(df1).encode(x='year', y='population')
+Chart(df).mark_line().encode(x='year', y='population').label('Too many Koalas?')
+```
 
+### Chart types
+
+You specify your chart type with one of:
+
+- `mark_line()`
+- `mark_bar()`
+
+#### Line chart
+
+```python
 # a third dimension can be encoded in the color
 Chart(df2).mark_line().encode(
     x='year', y='population', c='region'
 ).label(title='Population by region')
 ```
 
-#### Bar chart (`mark_bar()`)
+#### Bar chart
 
 ```python
-from owid.grapher import Chart
-
 # regular bar chart
-Chart(df1).mark_bar().encode(
-    x='population', y='region'
-).label(title='Population by region')
+Chart(df).mark_bar().encode(x='population', y='region')
+```
 
+```python
 # stacked bar chart
 Chart(df2).mark_bar(stacked=True).encode(
-    x='energy_generated', y='country', c='energy_source'
+    x='energy_generated',
+    y='country',
+    c='energy_source'
 )
 ```
 
