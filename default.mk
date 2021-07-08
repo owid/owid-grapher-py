@@ -16,7 +16,7 @@ test-default: check-formatting lint check-typing unittest
 
 lint-default:
 	@echo '==> Linting'
-	@poetry run flake8 --config=pyproject.toml $(SRC)
+	@poetry run flake8 $(SRC)
 
 check-formatting-default:
 	@echo '==> Checking formatting'

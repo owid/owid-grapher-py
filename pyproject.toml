@@ -29,8 +29,3 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.pyright]
 include = ["owid/**", "tests/**"]
-
-[flake8]
-# Ignore some errors, since we autoformat them away already wherever possible
-# from https://github.com/psf/black/blob/main/.flake8
-ignore = "E203, E266, E501, W503"
