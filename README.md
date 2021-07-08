@@ -54,6 +54,17 @@ Chart(df2).mark_bar(stacked=True).encode(
 )
 ```
 
+### Labels
+
+```python
+Chart(df).encode(
+    x='year', y='population'
+).labels(
+    title='Very important',
+    subtitle='Less important'
+)
+```
+
 ### Interactivity
 
 ```python
