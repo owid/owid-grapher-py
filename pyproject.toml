@@ -9,6 +9,8 @@ packages = [{ include = "owid" }]
 python = "^3.9"
 dataclasses-json = "^0.5.4"
 pandas = "^1.3.0"
+requests = "^2.25.1"
+python-dateutil = "^2.8.1"
 
 [tool.poetry.dev-dependencies]
 watchdog = "^2.1.3"

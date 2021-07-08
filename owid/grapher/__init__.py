@@ -38,6 +38,11 @@ class Chart:
         self.y = y
         self.c = c
 
+        # fail early if there's been a typo
+        for col in [x, y, c]:
+            if col and col not in self.data.columns:
+                raise ValueError(f"no such column: {col}")
+
         if x == "date":
             self.time_type = TimeType.DAY
 
@@ -252,7 +257,10 @@ class DataConfig:
                 lambda d: d.toordinal() - offset
             )
 
-        if not c:
+        if c:
+            df["variable"] = df.pop(c)
+            df["value"] = df.pop(y)
+        else:
             df = df.melt("year")
 
         df["entity"] = df.pop("variable")
