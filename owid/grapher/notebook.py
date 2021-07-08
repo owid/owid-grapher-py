@@ -112,6 +112,10 @@ def _gen_selection(config: dict, data: pd.DataFrame) -> str:
 def _gen_interaction(config: dict, data: pd.DataFrame) -> str:
     parts = []
 
+    entity_control = not config.get("hideEntityControls")
+    if entity_control:
+        parts.append("entity_control=True")
+
     scale_control = config.get("yAxis", {}).get("canChangeScaleType")
     if scale_control is not None:
         parts.append(f"scale_control={scale_control}")

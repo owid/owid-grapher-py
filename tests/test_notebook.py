@@ -27,6 +27,8 @@ grapher.Chart(
 ).encode(
     x="year",
     y="value"
+).interact(
+    entity_control=True
 )
 """.strip()
     assert py == expected
@@ -50,7 +52,10 @@ grapher.Chart(
 ).encode(
     x="date",
     y="value"
+).interact(
+    entity_control=True
 )
+
 """.strip()
     assert py == expected
 
@@ -85,6 +90,8 @@ grapher.Chart(
     subtitle="Soon he will begin shrinking",
     source_desc="An elusive gypsy",
     note="Perhaps not 100% reliable"
+).interact(
+    entity_control=True
 )
 """.strip()
     assert py == expected
