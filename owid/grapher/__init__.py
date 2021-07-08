@@ -196,7 +196,7 @@ class Dataset:
         variables = {}
         for variable_id, variable in enumerate(sorted(df.variable.unique()), 1):
             var_data = df[df.variable == variable]
-            variables[variable_id] = Variable(
+            variables[str(variable_id)] = Variable(
                 id=variable_id,
                 name=variable,
                 years=var_data.year.to_list(),

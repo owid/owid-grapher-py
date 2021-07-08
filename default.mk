@@ -2,6 +2,8 @@
 #  default.mk
 #
 
+SRC = src test
+
 default:
 	@echo 'Available commands:'
 	@echo
@@ -9,27 +11,28 @@ default:
 	@echo '  make watch     Run all tests, watching for changes'
 	@echo
 
-test-default: lint check-formatting check-typing unittest
+# check formatting before lint, since an autoformat might fix linting issues
+test-default: check-formatting lint check-typing unittest
 
 lint-default:
 	@echo '==> Linting'
-	@poetry run flake8
+	@poetry run flake8 --config=pyproject.toml $(SRC)
 
 check-formatting-default:
 	@echo '==> Checking formatting'
-	@poetry run black --check -q .
+	@poetry run black --check -q $(SRC)
 
 check-typing-default:
 	@echo '==> Checking types'
-	@poetry run mypy .
+	PYTHONPATH=. poetry run mypy .
 
 unittest-default:
 	@echo '==> Running unit tests'
-	@poetry run pytest
+	@PYTHONPATH=. poetry run pytest
 
 format-default:
 	@echo '==> Reformatting files'
-	@poetry run black -q .
+	@poetry run black -q $(SRC)
 
 watch-default:
 	poetry run watchmedo shell-command -c 'clear; make test' --recursive --drop .
