@@ -83,6 +83,7 @@ class Chart:
         allow_relative: Optional[bool] = None,
         scale_control: Optional[bool] = None,
         entity_control: Optional[bool] = None,
+        enable_map: Optional[bool] = None,
     ) -> "Chart":
         if allow_relative is not None:
             self.config.hide_relative_toggle = False
@@ -95,6 +96,9 @@ class Chart:
 
         if entity_control is not None:
             self.config.hide_entity_controls = not entity_control
+
+        if enable_map:
+            self.config.has_map_tab = True
 
         return self
 
@@ -151,6 +155,7 @@ class ChartConfig:
     hide_legend: bool = False
     hide_entity_controls: bool = True
     hide_relative_toggle: bool = True
+    has_map_tab: bool = False
     stack_mode: Literal["relative", "absolute"] = "absolute"
     y_axis: dict = field(default_factory=dict)
 

@@ -124,6 +124,9 @@ def _gen_interaction(config: dict, data: pd.DataFrame) -> str:
     if disable_relative is not None:
         parts.append(f"allow_relative={not disable_relative}")
 
+    if config.get("hasMapTab"):
+        parts.append("enable_map=True")
+
     if parts:
         return ".interact(\n    " + ",\n    ".join(parts) + "\n)"
 
