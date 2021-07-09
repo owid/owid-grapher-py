@@ -5,7 +5,7 @@
 #
 
 from enum import Enum
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal, Tuple
 import string
 import random
 from dataclasses import dataclass, field
@@ -14,6 +14,7 @@ import json
 
 import pandas as pd
 from dataclasses_json import dataclass_json, LetterCase
+from dateutil.parser import parse
 
 DATE_DISPLAY = {"yearIsDay": True, "zeroDay": "1970-01-01"}
 
@@ -31,6 +32,7 @@ class Chart:
         self.c: Optional[str] = None
         self.time_type = TimeType.YEAR
         self.selection: Optional[List[str]] = None
+        self.timespan: Optional[Tuple[Any, Any]] = None
 
     def encode(
         self, x: Optional[str] = None, y: Optional[str] = None, c: Optional[str] = None
@@ -102,8 +104,19 @@ class Chart:
 
         return self
 
-    def select(self, entities: List[str]) -> "Chart":
-        self.selection = entities
+    def select(
+        self,
+        entities: Optional[List[str]] = None,
+        timespan: Optional[Tuple[Any, Any]] = None,
+    ) -> "Chart":
+        if entities:
+            self.selection = entities
+
+        if timespan:
+            if isinstance(timespan, (str, int)):
+                timespan = (timespan, None)
+            self.timespan = timespan
+
         return self
 
     def _repr_html_(self):
@@ -129,6 +142,7 @@ class Chart:
             time_type=self.time_type,
             chart_type=self.config.type,
             selection=self.selection,
+            timespan=self.timespan,
         )
 
 
@@ -247,6 +261,8 @@ class DataConfig:
     owid_dataset: Dataset
     dimensions: List[Dimension]
     selected_data: List[Dict[str, int]]
+    min_time: Optional[int] = None
+    max_time: Optional[int] = None
 
     @classmethod
     def from_data(
@@ -258,6 +274,7 @@ class DataConfig:
         time_type: "TimeType" = TimeType.YEAR,
         chart_type: ChartType = "LineChart",
         selection: Optional[List[str]] = None,
+        timespan: Optional[Tuple[Any, Any]] = None,
     ) -> "DataConfig":
         # reshape tidy data into (year, entity, variable, value) form
         if chart_type == "LineChart":
@@ -278,10 +295,20 @@ class DataConfig:
                 {"entityId": e.id} for e in entities if e.name in selection
             ]
 
+        min_time, max_time = None, None
+        if timespan:
+            if time_type == TimeType.DAY:
+                # remap to a timespan in integer days
+                timespan = _timespan_from_date(timespan)
+
+            min_time, max_time = timespan
+
         return DataConfig(
             owid_dataset=dataset,
             dimensions=Dimension.from_dataset(dataset),
             selected_data=selected_data,
+            min_time=min_time,
+            max_time=max_time,
         )
 
     @staticmethod
@@ -391,3 +418,12 @@ def prune(d: Dict[str, Any]) -> Dict[str, Any]:
     return {
         k: prune(v) if isinstance(v, dict) else v for k, v in d.items() if v is not None
     }
+
+
+def _timespan_from_date(timespan: Tuple[str, str]) -> Tuple[int, int]:
+    from_date_d = parse(timespan[0]).date()
+    to_date_d = parse(timespan[1]).date()
+
+    offset = dt.date(1970, 1, 1).toordinal()
+
+    return (from_date_d.toordinal() - offset, to_date_d.toordinal() - offset)

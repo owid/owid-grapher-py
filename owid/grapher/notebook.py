@@ -107,8 +107,48 @@ def _gen_selection(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
 
     If we have multiple variables, pre-select the entity.
     """
+    pre_selection, selection = _gen_entity_selection(config, data)
+
+    min_time = config.get("minTime")
+    max_time = config.get("maxTime")
+
+    if pre_selection:
+        if len(pre_selection) == 1:
+            pre_selection_s = f'[data.entity == "{pre_selection[0]}"]'
+        else:
+            assert False
+    else:
+        pre_selection_s = ""
+
+    if selection and not min_time:
+        middle = '",\n    "'.join(selection)
+        selection_s = """.select(
+    "{middle}"
+)"""
+    elif min_time and not selection:
+        selection_s = f""".select(
+    timespan=({min_time}, {max_time})
+)"""
+
+    elif selection and min_time:
+        middle = '",\n        "'.join(selection)
+        selection_s = f""".select(
+    entities="{middle}",
+    timespan=({min_time}, {max_time})
+)"""
+    else:
+        selection_s = ""
+
+    return pre_selection_s, selection_s
+
+
+def _gen_entity_selection(
+    config: dict, data: pd.DataFrame
+) -> Tuple[List[str], List[str]]:
+    entities: List[str] = []
+
     if config.get("selectedEntityNames"):
-        entities: List[str] = config["selectedEntityNames"]
+        entities = config["selectedEntityNames"]
 
     elif config.get("selectedData") and len(config["selectedData"]) != len(
         data.entity.unique()
@@ -127,19 +167,12 @@ def _gen_selection(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
             )
         )
 
-    else:
-        # no selection
-        return "", ""
-
     # we have an actual selection
     if len(config["dimensions"]) > 1:
         # do entity pre-selection
-        assert len(entities) == 1
-        (entity,) = entities
-        return f'[data.entity == "{entity}"]', ""
+        return entities, []
 
-    entity_str = '",\n    "'.join(entities)
-    return "", f'.select([\n    "{entity_str}"\n])'
+    return [], entities
 
 
 def _gen_interaction(config: dict) -> str:
