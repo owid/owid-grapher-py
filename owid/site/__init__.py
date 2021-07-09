@@ -40,11 +40,11 @@ def get_chart_config(url: str) -> dict:
 def get_chart_data(url: str) -> pd.DataFrame:
     "Fetch the data from an OWID chart page as a data frame."
     config = get_chart_config(url)
-    version = config["version"]
-    variable_ids = [dim["variableId"] for dim in config["dimensions"]]
-    url = DATA_URL.format(variables="+".join(map(str, variable_ids)), version=version)
-    owid_data = requests.get(url).json()
+    owid_data = get_owid_data(config)
+    return owid_data_to_frame(owid_data)
 
+
+def owid_data_to_frame(owid_data: dict) -> pd.DataFrame:
     entity_map = {int(k): v["name"] for k, v in owid_data["entityKey"].items()}
     frames = []
     for variable in owid_data["variables"].values():
@@ -64,3 +64,11 @@ def get_chart_data(url: str) -> pd.DataFrame:
         frames.append(df)
 
     return pd.concat(frames)
+
+
+def get_owid_data(config: dict) -> dict:
+    version = config["version"]
+    variable_ids = [dim["variableId"] for dim in config["dimensions"]]
+    url = DATA_URL.format(variables="+".join(map(str, variable_ids)), version=version)
+    owid_data = requests.get(url).json()
+    return owid_data
