@@ -5,7 +5,7 @@
 #
 
 from enum import Enum
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal, Tuple
 import string
 import random
 from dataclasses import dataclass, field
@@ -14,6 +14,7 @@ import json
 
 import pandas as pd
 from dataclasses_json import dataclass_json, LetterCase
+from dateutil.parser import parse
 
 DATE_DISPLAY = {"yearIsDay": True, "zeroDay": "1970-01-01"}
 
@@ -31,6 +32,7 @@ class Chart:
         self.c: Optional[str] = None
         self.time_type = TimeType.YEAR
         self.selection: Optional[List[str]] = None
+        self.timespan: Optional[Tuple[Any, Any]] = None
 
     def encode(
         self, x: Optional[str] = None, y: Optional[str] = None, c: Optional[str] = None
@@ -64,11 +66,8 @@ class Chart:
         self.config.type = "ScatterPlot"
         return self
 
-    def mark_line(self, relative: Optional[bool] = None) -> "Chart":
+    def mark_line(self) -> "Chart":
         self.config.type = "LineChart"
-        if relative:
-            self.config.stack_mode = "relative"
-
         return self
 
     def mark_bar(self, stacked=False) -> "Chart":
@@ -83,6 +82,7 @@ class Chart:
         allow_relative: Optional[bool] = None,
         scale_control: Optional[bool] = None,
         entity_control: Optional[bool] = None,
+        enable_map: Optional[bool] = None,
     ) -> "Chart":
         if allow_relative is not None:
             self.config.hide_relative_toggle = False
@@ -96,10 +96,28 @@ class Chart:
         if entity_control is not None:
             self.config.hide_entity_controls = not entity_control
 
+        if enable_map:
+            self.config.has_map_tab = True
+
         return self
 
-    def select(self, entities: List[str]) -> "Chart":
-        self.selection = entities
+    def select(
+        self,
+        entities: Optional[List[str]] = None,
+        timespan: Optional[Tuple[Any, Any]] = None,
+    ) -> "Chart":
+        if entities:
+            self.selection = entities
+
+        if timespan:
+            if isinstance(timespan, (str, int)):
+                timespan = (timespan, None)
+            self.timespan = timespan
+
+        return self
+
+    def transform(self, relative: bool) -> "Chart":
+        self.config.stack_mode = "relative" if relative else "absolute"
         return self
 
     def _repr_html_(self):
@@ -125,6 +143,7 @@ class Chart:
             time_type=self.time_type,
             chart_type=self.config.type,
             selection=self.selection,
+            timespan=self.timespan,
         )
 
 
@@ -151,6 +170,7 @@ class ChartConfig:
     hide_legend: bool = False
     hide_entity_controls: bool = True
     hide_relative_toggle: bool = True
+    has_map_tab: bool = False
     stack_mode: Literal["relative", "absolute"] = "absolute"
     y_axis: dict = field(default_factory=dict)
 
@@ -242,6 +262,8 @@ class DataConfig:
     owid_dataset: Dataset
     dimensions: List[Dimension]
     selected_data: List[Dict[str, int]]
+    min_time: Optional[int] = None
+    max_time: Optional[int] = None
 
     @classmethod
     def from_data(
@@ -253,6 +275,7 @@ class DataConfig:
         time_type: "TimeType" = TimeType.YEAR,
         chart_type: ChartType = "LineChart",
         selection: Optional[List[str]] = None,
+        timespan: Optional[Tuple[Any, Any]] = None,
     ) -> "DataConfig":
         # reshape tidy data into (year, entity, variable, value) form
         if chart_type == "LineChart":
@@ -262,7 +285,7 @@ class DataConfig:
         else:
             raise ValueError(f"chart type {chart_type} is not yet implemented")
 
-        df = df.dropna()
+        df = df.dropna()  # type: ignore
 
         dataset = Dataset.from_frame(df, time_type)
         entities = dataset.entity_key.values()
@@ -273,10 +296,20 @@ class DataConfig:
                 {"entityId": e.id} for e in entities if e.name in selection
             ]
 
+        min_time, max_time = None, None
+        if timespan:
+            if time_type == TimeType.DAY:
+                # remap to a timespan in integer days
+                timespan = _timespan_from_date(timespan)
+
+            min_time, max_time = timespan
+
         return DataConfig(
             owid_dataset=dataset,
             dimensions=Dimension.from_dataset(dataset),
             selected_data=selected_data,
+            min_time=min_time,
+            max_time=max_time,
         )
 
     @staticmethod
@@ -284,7 +317,7 @@ class DataConfig:
         df: pd.DataFrame, x: str, y: str, c: Optional[str], time_type: TimeType
     ) -> pd.DataFrame:
         fake_variable = "dummy"
-        df = (df[[x, y, c]] if c else df[[x, y]]).copy()
+        df = (df[[x, y, c]] if c else df[[x, y]]).copy()  # type: ignore
         df["year"] = df.pop(x)
 
         if time_type == TimeType.DAY:
@@ -324,7 +357,7 @@ class DataConfig:
 
 
 def generate_iframe(config: Dict[str, Any]) -> str:
-    iframe_name = "".join(random.choice(string.ascii_lowercase) for i in range(20))
+    iframe_name = "".join(random.choice(string.ascii_lowercase) for _ in range(20))
     iframe_contents = f"""
 <!DOCTYPE html>
 <html>
@@ -386,3 +419,12 @@ def prune(d: Dict[str, Any]) -> Dict[str, Any]:
     return {
         k: prune(v) if isinstance(v, dict) else v for k, v in d.items() if v is not None
     }
+
+
+def _timespan_from_date(timespan: Tuple[str, str]) -> Tuple[int, int]:
+    from_date_d = parse(timespan[0]).date()
+    to_date_d = parse(timespan[1]).date()
+
+    offset = dt.date(1970, 1, 1).toordinal()
+
+    return (from_date_d.toordinal() - offset, to_date_d.toordinal() - offset)

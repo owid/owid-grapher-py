@@ -67,6 +67,13 @@ Chart(df).encode(
 )
 ```
 
+### Transforms
+
+```python
+# plot relative change
+Chart(...).transform(relative=True)
+```
+
 ### Interactivity
 
 ```python
@@ -82,6 +89,20 @@ Chart(...).interact(scale_control=True)
 ```python
 # enable the country/entity picker
 Chart(...).interact(entity_control=True)
+```
+
+```python
+# enable the map tab
+Chart(...).interact(enable_map=True)
+```
+
+### Data selection
+
+```python
+Chart(...).select(
+    entities=['Australia', 'New Zealand'],
+    timespan=(1990, 2020)
+)
 ```
 
 ## How it works
@@ -111,6 +132,8 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `devel`
+    - Support timespans with `select()`
 - `0.1.1`
     - Improve `select()`, `interact()` and `label()` methods on `Chart` to work in more cases
     - Helpers in to download the config or the data from a chart page (`owid.site`)
