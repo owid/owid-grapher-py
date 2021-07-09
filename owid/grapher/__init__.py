@@ -66,11 +66,8 @@ class Chart:
         self.config.type = "ScatterPlot"
         return self
 
-    def mark_line(self, relative: Optional[bool] = None) -> "Chart":
+    def mark_line(self) -> "Chart":
         self.config.type = "LineChart"
-        if relative:
-            self.config.stack_mode = "relative"
-
         return self
 
     def mark_bar(self, stacked=False) -> "Chart":
@@ -117,6 +114,10 @@ class Chart:
                 timespan = (timespan, None)
             self.timespan = timespan
 
+        return self
+
+    def transform(self, relative: bool) -> "Chart":
+        self.config.stack_mode = "relative" if relative else "absolute"
         return self
 
     def _repr_html_(self):

@@ -70,12 +70,20 @@ def translate_line_chart(config: dict, data: pd.DataFrame) -> str:
     preselection, selection = _gen_selection(config, data)
     labels = _gen_labels(config)
     interaction = _gen_interaction(config)
+    transform = _gen_transform(config)
 
     return f"""
 grapher.Chart(
     data{preselection}
-){encoding}{selection}{labels}{interaction}
+){encoding}{selection}{transform}{labels}{interaction}
 """.strip()
+
+
+def _gen_transform(config: dict) -> str:
+    if config.get("stackMode") == "relative":
+        return ".transform(\n     relative=True\n)"
+
+    return ""
 
 
 def _gen_encoding(config: dict, data: pd.DataFrame) -> str:
