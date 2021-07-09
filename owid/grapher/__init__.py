@@ -267,7 +267,7 @@ class DataConfig:
         else:
             raise ValueError(f"chart type {chart_type} is not yet implemented")
 
-        df = df.dropna()
+        df = df.dropna()  # type: ignore
 
         dataset = Dataset.from_frame(df, time_type)
         entities = dataset.entity_key.values()
@@ -289,7 +289,7 @@ class DataConfig:
         df: pd.DataFrame, x: str, y: str, c: Optional[str], time_type: TimeType
     ) -> pd.DataFrame:
         fake_variable = "dummy"
-        df = (df[[x, y, c]] if c else df[[x, y]]).copy()
+        df = (df[[x, y, c]] if c else df[[x, y]]).copy()  # type: ignore
         df["year"] = df.pop(x)
 
         if time_type == TimeType.DAY:
@@ -329,7 +329,7 @@ class DataConfig:
 
 
 def generate_iframe(config: Dict[str, Any]) -> str:
-    iframe_name = "".join(random.choice(string.ascii_lowercase) for i in range(20))
+    iframe_name = "".join(random.choice(string.ascii_lowercase) for _ in range(20))
     iframe_contents = f"""
 <!DOCTYPE html>
 <html>
