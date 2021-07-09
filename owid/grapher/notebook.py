@@ -10,7 +10,7 @@ Automatically generating notebooks from graphers.
 
 from os.path import join, isdir
 from os import mkdir
-from typing import Optional, Iterator
+from typing import Optional, Iterator, List, Tuple
 import json
 
 # import jsonschema
@@ -54,38 +54,43 @@ def translate_config(config: dict, data: pd.DataFrame) -> str:
     "Turn a grapher config into a python string describing the chart."
     # jsonschema.validate(config, WHITELIST_SCHEMA)
 
-    tab = config.get("tab", "LineChart")
+    tab = config.get("tab", "chart")
+    if tab != "chart":
+        raise UnsupportedChartType(tab)
 
-    if tab == "LineChart":
+    chart_type = config.get("type", "LineChart")
+    if chart_type == "LineChart":
         return translate_line_chart(config, data)
 
-    raise Exception(f"chart type {tab} not supported yet")
+    raise UnsupportedChartType(chart_type)
 
 
 def translate_line_chart(config: dict, data: pd.DataFrame) -> str:
-    encoding = _gen_encoding(data)
-    selection = _gen_selection(config, data)
+    encoding = _gen_encoding(config, data)
+    preselection, selection = _gen_selection(config, data)
     labels = _gen_labels(config)
-    interaction = _gen_interaction(config, data)
+    interaction = _gen_interaction(config)
 
     return f"""
 grapher.Chart(
-    data
+    data{preselection}
 ){encoding}{selection}{labels}{interaction}
 """.strip()
 
 
-def _gen_encoding(data: pd.DataFrame) -> str:
+def _gen_encoding(config: dict, data: pd.DataFrame) -> str:
     if "date" in data:
         x = "date"
     else:
         x = "year"
 
     c: Optional[str] = None
-    if len(data.entity.unique()) > 1:
-        c = "entity"
-    elif len(data.variable.unique()) > 1:
+    if len(config["dimensions"]) > 1:
         c = "variable"
+    elif len(config.get("selectedData", [])) > 1:
+        c = "entity"
+    elif len(config.get("selectedEntityNames", [])) > 1:
+        c = "entity"
 
     parts = [f'x="{x}"', 'y="value"']
     if c:
@@ -95,21 +100,49 @@ def _gen_encoding(data: pd.DataFrame) -> str:
     return f".encode(\n    {encoding}\n)"
 
 
-def _gen_selection(config: dict, data: pd.DataFrame) -> str:
-    if len(config["selectedData"]) == len(data.entity.unique()):
-        return ""
+def _gen_selection(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
+    """
+    The config may select one variable and some of many entities, or it may select one entity and
+    some of many variables.
 
-    selected_ids = [str(s["entityId"]) for s in config["selectedData"]]
+    If we have multiple variables, pre-select the entity.
+    """
+    if config.get("selectedEntityNames"):
+        entities: List[str] = config["selectedEntityNames"]
 
-    owid_data = get_owid_data(config)
-    entities = [owid_data["entityKey"][entity_id]["name"] for entity_id in selected_ids]
+    elif config.get("selectedData") and len(config["selectedData"]) != len(
+        data.entity.unique()
+    ):
+        selected_ids = [str(s["entityId"]) for s in config["selectedData"]]
+
+        # requires an HTTP request
+        owid_data = get_owid_data(config)
+
+        entities = list(
+            set(
+                [
+                    owid_data["entityKey"][entity_id]["name"]
+                    for entity_id in selected_ids
+                ]
+            )
+        )
+
+    else:
+        # no selection
+        return "", ""
 
     # we have an actual selection
+    if len(config["dimensions"]) > 1:
+        # do entity pre-selection
+        assert len(entities) == 1
+        (entity,) = entities
+        return f'[data.entity == "{entity}"]', ""
+
     entity_str = '",\n    "'.join(entities)
-    return f'.select([\n    "{entity_str}"\n])'
+    return "", f'.select([\n    "{entity_str}"\n])'
 
 
-def _gen_interaction(config: dict, data: pd.DataFrame) -> str:
+def _gen_interaction(config: dict) -> str:
     parts = []
 
     entity_control = not config.get("hideEntityControls")
@@ -149,6 +182,10 @@ def _gen_labels(config: dict) -> str:
         + ",\n    ".join(f'{k}="{v}"' for k, v in labels.items())
         + "\n)"
     )
+
+
+class UnsupportedChartType(Exception):
+    pass
 
 
 def generate_notebook(config: dict, path: str) -> None:
@@ -221,8 +258,12 @@ def main(input_file, dest_path):
             generate_notebook(config, dest_path)
             i += 1
             print(click.style(f"✓ [{i}/{total}] {slug}", fg="green"))
-        except:  # noqa
+        except UnsupportedChartType:
             print(f"✗ [{i}/{total}] {slug}")
+
+        except Exception as e:
+            print(f"ERROR: {slug}")
+            raise e
 
     print(f"Generated {i} notebooks successfully")
 

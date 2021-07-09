@@ -19,6 +19,7 @@ DATA_URL = (
     "https://ourworldindata.org/grapher/data/variables/{variables}.json?v={version}"
 )
 GRAPHER_PREFIX = "https://ourworldindata.org/grapher/"
+EPOCH_DATE = "2020-01-21"
 
 
 def get_chart_config(url: str) -> dict:
@@ -57,7 +58,7 @@ def owid_data_to_frame(owid_data: dict) -> pd.DataFrame:
             }
         )
         if variable.get("display", {}).get("yearIsDay"):
-            zero_day = parse(variable["display"]["zeroDay"]).date()
+            zero_day = parse(variable["display"].get("zeroDay", EPOCH_DATE)).date()
             df["date"] = df.pop("year").apply(lambda y: zero_day + dt.timedelta(days=y))
             df = df[["date", "entity", "variable", "value"]]
 
