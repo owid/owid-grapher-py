@@ -10,6 +10,7 @@ Tools for working with the live OWID grapher site.
 
 import json
 import datetime as dt
+from typing import Optional
 
 from dateutil.parser import parse
 import requests
@@ -38,9 +39,16 @@ def get_chart_config(url: str) -> dict:
     return json.loads(config)
 
 
-def get_chart_data(url: str) -> pd.DataFrame:
+def get_chart_data(
+    url: Optional[str] = None, slug: Optional[str] = None
+) -> pd.DataFrame:
     "Fetch the data from an OWID chart page as a data frame."
-    config = get_chart_config(url)
+    if not url and not slug:
+        raise ValueError("must provide an url or a slug")
+
+    full_url: str = url or (GRAPHER_PREFIX + slug)  # type: ignore
+
+    config = get_chart_config(full_url)
     owid_data = get_owid_data(config)
     return owid_data_to_frame(owid_data)
 

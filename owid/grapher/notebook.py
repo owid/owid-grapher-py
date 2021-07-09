@@ -249,9 +249,6 @@ def generate_notebook(config: dict, path: str) -> None:
     title = config["title"]
     save_to_notebook(slug, title, py, path)
 
-    data_file = join(path, "_data", f"{slug}.csv")
-    data.to_csv(data_file, index=False)
-
 
 def save_to_notebook(slug: str, title: str, py: str, path: str) -> None:
     nb_file = join(path, f"{slug}.ipynb")
@@ -276,11 +273,11 @@ def _new_notebook(slug: str, title: str, py: str):
         cells.append(nbf.v4.new_markdown_cell(f"# {title}"))
 
     cells.append(
-        nbf.v4.new_code_cell("import pandas as pd\n" "from owid import grapher")
+        nbf.v4.new_code_cell("import pandas as pd\n" "from owid import grapher, site")
     )
 
     cells.append(
-        nbf.v4.new_code_cell(f'data = pd.read_csv("_data/{slug}.csv")\ndata.head()')
+        nbf.v4.new_code_cell(f'data = site.get_chart_data(slug="{slug}")\ndata.head()')
     )
 
     cells.append(nbf.v4.new_code_cell(py))
