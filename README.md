@@ -132,7 +132,10 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
-- `devel`
+- `0.1.3`
+    - Do not render the data when auto-generating notebooks
+    - Allow fetching data by slug
+- `0.1.2`
     - Support timespans with `select()`
 - `0.1.1`
     - Improve `select()`, `interact()` and `label()` methods on `Chart` to work in more cases
