@@ -120,17 +120,26 @@ def _gen_selection(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
     min_time = config.get("minTime")
     max_time = config.get("maxTime")
 
+    # don't set something that's automatic
+    time = data["year"] if "year" in data.columns else data["date"]
+    if min_time == time.min():
+        min_time = None
+    if max_time == time.max():
+        max_time = None
+
     if pre_selection:
         if len(pre_selection) == 1:
             pre_selection_s = f'[data.entity == "{pre_selection[0]}"]'
         else:
-            assert False
+            pre_selection_s = (
+                ".query('entity in [\"" + '", "'.join(pre_selection) + "\"]')"
+            )
     else:
         pre_selection_s = ""
 
     if selection and not min_time:
         middle = '",\n    "'.join(selection)
-        selection_s = """.select([
+        selection_s = f""".select([
     "{middle}"
 ])"""
     elif min_time and not selection:
@@ -166,14 +175,15 @@ def _gen_entity_selection(
         # requires an HTTP request
         owid_data = get_owid_data(config)
 
-        entities = list(
-            set(
-                [
-                    owid_data["entityKey"][entity_id]["name"]
-                    for entity_id in selected_ids
-                ]
-            )
-        )
+        entities = []
+        for entity_id in selected_ids:
+            try:
+                entities.append(owid_data["entityKey"][entity_id]["name"])
+            except KeyError:
+                # some charts refer to entities that no longer exist
+                # e.g. total-gov-expenditure-percapita-OECD
+                continue
+        entities = list(set(entities))
 
     # we have an actual selection
     if len(config["dimensions"]) > 1:
