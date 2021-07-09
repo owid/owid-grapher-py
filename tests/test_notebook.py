@@ -5,8 +5,10 @@
 #
 
 import pandas as pd
+import json
 
 from owid.grapher import notebook
+from owid import grapher, site  # noqa
 
 
 def test_translate_line_chart_no_frills():
@@ -104,3 +106,17 @@ grapher.Chart(
 )
 """.strip()
     assert py == expected
+
+
+def test_life_expectancy():
+    "Can we replicate the chart with life expectancy."
+    slug = "life-expectancy"
+    url = f"https://ourworldindata.org/grapher/{slug}"
+    config = site.get_chart_config(url)
+    data = site.get_chart_data(url)
+    py = notebook.translate_config(config, data)
+    print(py)
+    chart = eval(py)
+    gen_config = chart.export()
+    assert gen_config
+    json.dumps(gen_config)

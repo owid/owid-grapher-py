@@ -130,9 +130,9 @@ def _gen_selection(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
 
     if selection and not min_time:
         middle = '",\n    "'.join(selection)
-        selection_s = """.select(
+        selection_s = """.select([
     "{middle}"
-)"""
+])"""
     elif min_time and not selection:
         selection_s = f""".select(
     timespan=({min_time}, {max_time})
@@ -141,7 +141,7 @@ def _gen_selection(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
     elif selection and min_time:
         middle = '",\n        "'.join(selection)
         selection_s = f""".select(
-    entities="{middle}",
+    entities=["{middle}"],
     timespan=({min_time}, {max_time})
 )"""
     else:
