@@ -33,7 +33,7 @@ You specify your chart type with one of:
 
 ```python
 # a third dimension can be encoded in the color
-Chart(df2).mark_line().encode(
+Chart(df).mark_line().encode(
     x='year', y='population', c='region'
 ).label(title='Population by region')
 ```
@@ -47,7 +47,7 @@ Chart(df).mark_bar().encode(x='population', y='region')
 
 ```python
 # stacked bar chart
-Chart(df2).mark_bar(stacked=True).encode(
+Chart(df).mark_bar(stacked=True).encode(
     x='energy_generated',
     y='country',
     c='energy_source'
