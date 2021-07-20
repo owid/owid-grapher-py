@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "owid-grapher-py"
-version = "0.1.2"
+version = "0.1.3"
 description = "OWID charts for rendering in Jupyter notebooks."
 authors = ["Lars Yencken <lars@yencken.org>"]
 packages = [{ include = "owid" }]
