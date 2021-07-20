@@ -23,9 +23,9 @@ GRAPHER_PREFIX = "https://ourworldindata.org/grapher/"
 EPOCH_DATE = "2020-01-21"
 
 
-def get_chart_config(url: str) -> dict:
+def get_chart_config(url: str, force: bool = False) -> dict:
     "Get the internal OWID chart config for a chart URL."
-    if not url.startswith(GRAPHER_PREFIX):
+    if not url.startswith(GRAPHER_PREFIX) and not force:
         raise Exception(f"not an OWID chart url: {url}")
 
     resp = requests.get(url)
