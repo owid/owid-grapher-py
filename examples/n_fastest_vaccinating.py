@@ -57,38 +57,12 @@ def main() -> None:
     # constructs chart
     c = Chart(df)
     c.time_type = TimeType.DAY
-    c.mark_line().encode(x="year", y="value").label(
+    c.mark_line().encode(x="year", y="value", c="entity").label(
         f"{TOPN} countries with fastest growth in people vaccinated per hundred "
         f"(between {TIME0.strftime('%Y-%m-%d')} and {TIME1.strftime('%Y-%m-%d')})"
-    ).interact(entity_control=True)
+    ).interact(entity_control=True).select(entities)
 
-    c.config.auto_improve()
-    config = c.export()
-
-    # constructs DataConfig (b/c the `DataConfig._reshape_line_chart` method invoked
-    # in `Chart.export()` does not work with the tidy format of `df` here to display
-    # data for multiple entities, so I need to construct my own DataConfig and
-    # update the Chart config with it).
-    d = Dataset.from_frame(df, time_type=TimeType.DAY)
-    dc = DataConfig(
-        owid_dataset=d,
-        dimensions=Dimension.from_dataset(d),
-        selected_data=[
-            {"entityId": ent.id}
-            for _id, ent in d.entity_key.items()
-            if ent.name in entities
-        ],
-    )
-
-    # convert dt.date objects to int for json export.
-    offset = dt.date(1970, 1, 1).toordinal()
-    for variable in dc.owid_dataset.variables.values():
-        variable.years = [y.toordinal() - offset for y in variable.years]
-
-    # displays html in browser
-    # html = c._repr_html_()
-    config.update(dc.to_dict())
-    html = generate_iframe(config).encode("utf-8")
+    html = generate_iframe(c.export()).encode("utf-8")
     open_html_in_browser(html)
 
 
