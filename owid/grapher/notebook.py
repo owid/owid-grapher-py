@@ -54,10 +54,6 @@ def translate_config(config: dict, data: pd.DataFrame) -> str:
     "Turn a grapher config into a python string describing the chart."
     # jsonschema.validate(config, WHITELIST_SCHEMA)
 
-    tab = config.get("tab", "chart")
-    if tab != "chart":
-        raise UnsupportedChartType(tab)
-
     chart_type = config.get("type", "LineChart")
     if chart_type == "LineChart":
         return translate_line_chart(config, data)
