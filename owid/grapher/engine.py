@@ -2,13 +2,17 @@
 #  engine.py
 #
 
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional, List
+import datetime as dt
 
 import pandas as pd
 from dateutil.parser import parse
 
 from .chart import DeclarativeConfig
-from .internal import StandaloneChartConfig, ChartConfig, DataConfig, TimeType
+from .internal import StandaloneChartConfig, ChartConfig, DataConfig, TimeType, Dataset
+
+# an arbitrary date used as a reference point to convert dates to integers
+EPOCH_DATE = "2020-01-21"
 
 
 def compile(chart: DeclarativeConfig) -> StandaloneChartConfig:
@@ -143,10 +147,10 @@ def _timespan_from_date(timespan: Tuple[str, str]) -> Tuple[int, int]:
     return (from_date_d.toordinal() - offset, to_date_d.toordinal() - offset)
 
 
-def owid_data_to_frame(owid_data: dict) -> pd.DataFrame:
+def dataset_to_frame(dataset: Dataset) -> pd.DataFrame:
     entity_map = {int(k): v["name"] for k, v in owid_data["entityKey"].items()}
     frames = []
-    for variable in owid_data["variables"].values():
+    for variable in dataset.variables.values():
         df = pd.DataFrame(
             {
                 "year": variable["years"],
@@ -163,3 +167,33 @@ def owid_data_to_frame(owid_data: dict) -> pd.DataFrame:
         frames.append(df)
 
     return pd.concat(frames)
+
+
+# all the types of charts we know how to translate back to python
+WHITELIST_SCHEMA = {
+    "$oneOf": [{"$ref": "/schemas/line_chart"}],
+    "definitions": {
+        "line_chart": {
+            "$id": "/schemas/line_chart",
+            "$allOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "tab": {"enum": ["chart"]},
+                    },
+                },
+                {"$ref": "/schemas/text_fields"},
+            ],
+        },
+        "text_fields": {
+            "$id": "/schemas/text_fields",
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "subtitle": {"type": "string"},
+                "note": {"type": "string"},
+                "sourceDesc": {"type": "string"},
+            },
+        },
+    },
+}

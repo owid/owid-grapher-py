@@ -16,8 +16,13 @@ def test_get_config():
     assert isinstance(config, dict)
 
 
-def test_get_data():
+def test_get_data_by_url():
     config = site.get_chart_data(
         "https://ourworldindata.org/grapher/israel-covid-19-cases-by-age"
     )
+    assert isinstance(config, pd.DataFrame)
+
+
+def test_get_data_by_slug():
+    config = site.get_chart_data(slug="israel-covid-19-cases-by-age")
     assert isinstance(config, pd.DataFrame)

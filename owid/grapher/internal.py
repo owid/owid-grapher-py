@@ -26,6 +26,7 @@ class TimeType(Enum):
 @dataclass_json(letter_case=LetterCase.CAMEL)
 @dataclass
 class ChartConfig:
+    id: int = 1
     tab: str = "chart"
     title: str = ""
     subtitle: str = ""
@@ -38,9 +39,14 @@ class ChartConfig:
     hide_legend: bool = False
     hide_entity_controls: bool = True
     hide_relative_toggle: bool = True
-    has_map_tab: bool = False
     stack_mode: Literal["relative", "absolute"] = "absolute"
     y_axis: dict = field(default_factory=dict)
+    dimensions: List["Dimension"] = field(default_factory=list)
+    selected_data: List[Dict[str, int]] = field(default_factory=list)
+    min_time: Optional[int] = None
+    max_time: Optional[int] = None
+    has_map_tab: bool = True
+    version: int = 1
 
     def auto_improve(self):
         if self.title and self.type == "LineChart":
@@ -49,12 +55,6 @@ class ChartConfig:
     @property
     def is_standalone(self) -> bool:
         return False
-
-    def fetch_data(self) -> "StandaloneChartConfig":
-        """
-        Attempt to download the data that matches this config.
-        """
-        raise Exception("not yet implemented")
 
 
 @dataclass_json(letter_case=LetterCase.CAMEL)
@@ -133,18 +133,15 @@ class Dataset:
 
         return Dataset(variables, entity_key)
 
-    def to_frame(self) -> pd.DataFrame:
-        pass
-
 
 @dataclass_json(letter_case=LetterCase.CAMEL)
 @dataclass
 class DataConfig:
-    owid_dataset: Dataset
-    dimensions: List[Dimension]
-    selected_data: List[Dict[str, int]]
-    min_time: Optional[int] = None
-    max_time: Optional[int] = None
+    """
+    The data and the view of it that has been selected.
+    """
+
+    owid_data: "Dataset"
 
     @classmethod
     def from_data(
@@ -192,9 +189,6 @@ class DataConfig:
             min_time=min_time,
             max_time=max_time,
         )
-
-    def to_frame(self) -> pd.DataFrame:
-        return self.owid_dataset.to_frame()
 
     @staticmethod
     def _reshape_line_chart(
@@ -284,13 +278,6 @@ class Variable:
 class Entity:
     name: str
     code: Optional[str]
-
-
-@dataclass_json(letter_case=LetterCase.CAMEL)
-@dataclass
-class OWIDData:
-    variables: Dict[str, Variable]
-    entity_key: Dict[str, Entity]
 
 
 @dataclass_json(letter_case=LetterCase.CAMEL)

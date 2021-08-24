@@ -14,4 +14,4 @@ check-typing:
 	poetry run mypy tests
 
 watch:
-	poetry run watchmedo shell-command -c 'clear; make unittest' --recursive --drop .
+	poetry run watchmedo shell-command -c 'clear; PYTHONPATH=. poetry run pytest tests/test_chart.py' --recursive --drop .

@@ -47,6 +47,9 @@ class Labels:
     source_desc: Optional[str] = None
     note: Optional[str] = None
 
+    def is_defaults(self) -> bool:
+        return self == Labels()
+
 
 @dataclass
 class Interaction:
@@ -55,11 +58,17 @@ class Interaction:
     entity_control: Optional[bool] = None
     enable_map: Optional[bool] = None
 
+    def is_defaults(self) -> bool:
+        return self == Interaction()
+
 
 @dataclass
 class YearSpan:
     min_time: Optional[int] = None
     max_time: Optional[int] = None
+
+    def is_defaults(self) -> bool:
+        return self == YearSpan()
 
 
 @dataclass
@@ -67,10 +76,28 @@ class DateSpan:
     min_time: Optional[dt.date] = None
     max_time: Optional[dt.date] = None
 
+    def is_defaults(self) -> bool:
+        return self == DateSpan()
+
+
+@dataclass
+class Transform:
+    stacked: bool = False
+    relative: bool = False
+
+    def is_defaults(self) -> bool:
+        return self == Transform()
+
 
 TimeSpan = Union[YearSpan, DateSpan]
 
 EntityNames = List[str]
+
+
+@dataclass
+class Selection:
+    entities: Optional[EntityNames] = None
+    timespan: Optional[TimeSpan] = None
 
 
 @dataclass
@@ -83,15 +110,15 @@ class DeclarativeConfig:
     """
 
     data: pd.DataFrame
-    encoding: Encoding = field(default_factory=Encoding)
-    labels: Labels = field(default_factory=Labels)
-    selection: Optional[EntityNames] = None
-    interaction: Interaction = field(default_factory=Interaction)
-    timespan: Optional[TimeSpan] = None
+
     chart_type: Literal["line", "bar", "map", "scatter", "marimekko"] = "line"
     tab: Literal["chart", "map"] = "chart"
-    stacked: bool = False
-    stack_mode: Literal["relative", "absolute"] = "absolute"
+
+    encoding: Encoding = field(default_factory=Encoding)
+    labels: Labels = field(default_factory=Labels)
+    selection: Selection = field(default_factory=Selection)
+    interaction: Interaction = field(default_factory=Interaction)
+    transforms: Transform = field(default_factory=Transform)
 
     def encode(
         self,
@@ -130,19 +157,18 @@ class DeclarativeConfig:
         self.chart_type = "scatter"
         return self
 
-    def mark_line(self, stacked=False) -> "DeclarativeConfig":
+    def mark_line(self) -> "DeclarativeConfig":
         self.chart_type = "line"
-        self.stacked = stacked
         return self
 
-    def mark_bar(self, stacked=False) -> "DeclarativeConfig":
+    def mark_bar(self) -> "DeclarativeConfig":
         self.chart_type = "bar"
-        self.stacked = stacked
         return self
 
     def mark_map(self):
         # the normal line chart offers a map view
         self.tab = "map"
+        self.interaction.enable_map = True
         return self
 
     def interact(
@@ -165,13 +191,201 @@ class DeclarativeConfig:
         timespan: Optional[TimeSpan] = None,
     ) -> "DeclarativeConfig":
         if entities:
-            self.selection = entities
+            self.selection.entities = entities
 
         if timespan:
-            self.timespan = timespan
+            self.selection.timespan = timespan
 
         return self
 
-    def transform(self, relative: bool) -> "DeclarativeConfig":
-        self.stack_mode = "relative" if relative else "absolute"
+    def transform(
+        self, stacked: bool = False, relative: bool = False
+    ) -> "DeclarativeConfig":
+        self.transform.stacked = stacked
+        self.transform.relative = relative
         return self
+
+
+def _to_py(config: DeclarativeConfig) -> str:
+    """
+    Generate the Python code that would recreate this declarative config.
+    """
+    encoding = _encoding_to_py(config.encoding)
+    preselection, selection = _selection_to_py(config.selection)
+    labels = _gen_labels(config.labels)
+    interaction = _gen_interaction(config.interaction)
+    transform = _transform_to_py(config.transforms)
+
+    return f"""
+grapher.Chart(
+    data{preselection}
+){encoding}{selection}{transform}{labels}{interaction}
+""".strip()
+
+
+def _transform_to_py(transform: Transform) -> str:
+    if transform.is_defaults():
+        return ""
+
+    scaffold = ".transform(\n    {}\n)"
+
+    parts = []
+    if transform.stacked:
+        parts.append("stacked=True")
+    if transform.relative:
+        parts.append("relative=True")
+
+    return scaffold.format(",\n    ".join(parts))
+
+
+def _encoding_to_py(encoding: Encoding) -> str:
+    if "date" in data:
+        x = "date"
+    else:
+        x = "year"
+
+    c: Optional[str] = None
+    if len(config["dimensions"]) > 1:
+        c = "variable"
+    elif len(config.get("selectedData", [])) > 1:
+        c = "entity"
+    elif len(config.get("selectedEntityNames", [])) > 1:
+        c = "entity"
+
+    parts = [f'x="{x}"', 'y="value"']
+    if c:
+        parts.append(f'c="{c}"')
+    encoding = ",\n    ".join(parts)
+
+    return f".encode(\n    {encoding}\n)"
+
+
+def _selection_to_py(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
+    """
+    The config may select one variable and some of many entities, or it may select one entity and
+    some of many variables.
+
+    If we have multiple variables, pre-select the entity.
+    """
+    pre_selection, selection = _gen_entity_selection(config, data)
+
+    min_time = config.get("minTime")
+    max_time = config.get("maxTime")
+
+    # don't set something that's automatic
+    time = data["year"] if "year" in data.columns else data["date"]
+    if min_time == time.min():
+        min_time = None
+    if max_time == time.max():
+        max_time = None
+
+    if pre_selection:
+        if len(pre_selection) == 1:
+            pre_selection_s = f'[data.entity == "{pre_selection[0]}"]'
+        else:
+            pre_selection_s = (
+                ".query('entity in [\"" + '", "'.join(pre_selection) + "\"]')"
+            )
+    else:
+        pre_selection_s = ""
+
+    if selection and not min_time:
+        middle = '",\n    "'.join(selection)
+        selection_s = f""".select([
+    "{middle}"
+])"""
+    elif min_time and not selection:
+        selection_s = f""".select(
+    timespan=({min_time}, {max_time})
+)"""
+
+    elif selection and min_time:
+        middle = '",\n        "'.join(selection)
+        selection_s = f""".select(
+    entities=["{middle}"],
+    timespan=({min_time}, {max_time})
+)"""
+    else:
+        selection_s = ""
+
+    return pre_selection_s, selection_s
+
+
+def _gen_entity_selection(
+    config: dict, data: pd.DataFrame
+) -> Tuple[List[str], List[str]]:
+    entities: List[str] = []
+
+    if config.get("selectedEntityNames"):
+        entities = config["selectedEntityNames"]
+
+    elif config.get("selectedData") and len(config["selectedData"]) != len(
+        data.entity.unique()
+    ):
+        selected_ids = [str(s["entityId"]) for s in config["selectedData"]]
+
+        # requires an HTTP request
+        owid_data = get_owid_data(config)
+
+        entities = []
+        for entity_id in selected_ids:
+            try:
+                entities.append(owid_data["entityKey"][entity_id]["name"])
+            except KeyError:
+                # some charts refer to entities that no longer exist
+                # e.g. total-gov-expenditure-percapita-OECD
+                continue
+        entities = list(set(entities))
+
+    # we have an actual selection
+    if len(config["dimensions"]) > 1:
+        # do entity pre-selection
+        return entities, []
+
+    return [], entities
+
+
+def _gen_interaction(config: dict) -> str:
+    parts = []
+
+    entity_control = not config.get("hideEntityControls")
+    if entity_control:
+        parts.append("entity_control=True")
+
+    scale_control = config.get("yAxis", {}).get("canChangeScaleType")
+    if scale_control is not None:
+        parts.append(f"scale_control={scale_control}")
+
+    disable_relative = config.get("hideRelativeControls")
+    if disable_relative is not None:
+        parts.append(f"allow_relative={not disable_relative}")
+
+    if config.get("hasMapTab"):
+        parts.append("enable_map=True")
+
+    if parts:
+        return ".interact(\n    " + ",\n    ".join(parts) + "\n)"
+
+    return ""
+
+
+def _gen_labels(config: dict) -> str:
+    to_snake = {"sourceDesc": "source_desc"}
+
+    labels = {}
+    for label in ["title", "subtitle", "sourceDesc", "note"]:
+        if config.get(label):
+            labels[to_snake.get(label, label)] = " ".join(config[label].split())
+
+    if not labels:
+        return ""
+
+    return (
+        ".label(\n    "
+        + ",\n    ".join(f'{k}="{v}"' for k, v in labels.items())
+        + "\n)"
+    )
+
+
+class UnsupportedChartType(Exception):
+    pass

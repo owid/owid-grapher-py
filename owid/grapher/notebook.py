@@ -18,8 +18,7 @@ import pandas as pd
 import nbformat as nbf
 import click
 
-from owid.site import get_owid_data
-from owid.grapher.engine import translate_config, reverse_compile
+from owid.grapher.engine import compile, reverse_compile
 from owid.grapher.internal import StandaloneChartConfig
 
 
