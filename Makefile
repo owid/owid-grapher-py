@@ -12,3 +12,6 @@ check-typing:
 	@echo '==> Checking types'
 	poetry run mypy -p owid
 	poetry run mypy tests
+
+watch:
+	poetry run watchmedo shell-command -c 'clear; make unittest' --recursive --drop .

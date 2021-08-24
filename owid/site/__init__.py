@@ -10,7 +10,12 @@ Tools for working with the live OWID grapher site.
 
 import json
 import datetime as dt
-from typing import Optional
+
+from dataclasses_json.api import LetterCase
+from dataclasses_json import dataclass_json
+from owid.grapher.internal import Variable, OWIDData
+from typing import Optional, List, Dict
+from dataclasses import dataclass
 
 from dateutil.parser import parse
 import requests
@@ -53,31 +58,9 @@ def get_chart_data(
     return owid_data_to_frame(owid_data)
 
 
-def owid_data_to_frame(owid_data: dict) -> pd.DataFrame:
-    entity_map = {int(k): v["name"] for k, v in owid_data["entityKey"].items()}
-    frames = []
-    for variable in owid_data["variables"].values():
-        df = pd.DataFrame(
-            {
-                "year": variable["years"],
-                "entity": [entity_map[e] for e in variable["entities"]],
-                "variable": variable["name"],
-                "value": variable["values"],
-            }
-        )
-        if variable.get("display", {}).get("yearIsDay"):
-            zero_day = parse(variable["display"].get("zeroDay", EPOCH_DATE)).date()
-            df["date"] = df.pop("year").apply(lambda y: zero_day + dt.timedelta(days=y))
-            df = df[["date", "entity", "variable", "value"]]
-
-        frames.append(df)
-
-    return pd.concat(frames)
-
-
-def get_owid_data(config: dict) -> dict:
+def get_owid_data(config: dict) -> OWIDData:
     version = config["version"]
     variable_ids = [dim["variableId"] for dim in config["dimensions"]]
     url = DATA_URL.format(variables="+".join(map(str, variable_ids)), version=version)
     owid_data = requests.get(url).json()
-    return owid_data
+    return OWIDData.from_dict(owid_data)  # type: ignore
