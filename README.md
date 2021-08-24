@@ -59,7 +59,7 @@ Chart(df2).mark_bar(stacked=True).encode(
 ```python
 Chart(df).encode(
     x='year', y='population'
-).labels(
+).label(
     title='Very important',
     subtitle='Less important',
     note='An extra note',
