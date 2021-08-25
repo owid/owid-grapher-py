@@ -10,4 +10,8 @@ from .chart import DeclarativeConfig
 
 
 class Chart(DeclarativeConfig):
-    pass
+    def to_py(self):
+        return super().to_py("grapher.Chart")
+
+    def _repr_html_(self):
+        pass

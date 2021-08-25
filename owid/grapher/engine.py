@@ -4,6 +4,7 @@
 
 from typing import Tuple, Dict, Any, Optional, List
 import datetime as dt
+import random
 
 import pandas as pd
 from dateutil.parser import parse
@@ -67,13 +68,13 @@ def data_config(self) -> "DataConfig":
     )
 
 
-def _repr_html_(self) -> str:
-    full_config = self.export()
+def render_chart(config: DeclarativeConfig) -> str:
+    grapher_config = compile(config)
     html = generate_iframe(full_config)
     return html
 
 
-def generate_iframe(config: Dict[str, Any]) -> str:
+def generate_iframe(grapher_config: StandaloneChartConfig) -> str:
     iframe_name = "".join(random.choice(string.ascii_lowercase) for _ in range(20))
     iframe_contents = f"""
 <!DOCTYPE html>
@@ -197,3 +198,89 @@ WHITELIST_SCHEMA = {
         },
     },
 }
+
+# XXX old chart stuff
+
+
+def _gen_entity_selection(
+    config: dict, data: pd.DataFrame
+) -> Tuple[List[str], List[str]]:
+    entities: List[str] = []
+
+    if config.get("selectedEntityNames"):
+        entities = config["selectedEntityNames"]
+
+    elif config.get("selectedData") and len(config["selectedData"]) != len(
+        data.entity.unique()
+    ):
+        selected_ids = [str(s["entityId"]) for s in config["selectedData"]]
+
+        # requires an HTTP request
+        owid_data = get_owid_data(config)
+
+        entities = []
+        for entity_id in selected_ids:
+            try:
+                entities.append(owid_data["entityKey"][entity_id]["name"])
+            except KeyError:
+                # some charts refer to entities that no longer exist
+                # e.g. total-gov-expenditure-percapita-OECD
+                continue
+        entities = list(set(entities))
+
+    # we have an actual selection
+    if len(config["dimensions"]) > 1:
+        # do entity pre-selection
+        return entities, []
+
+    return [], entities
+
+
+class UnsupportedChartType(Exception):
+    pass
+
+
+def code_block_ex_selection():
+    # XXX stuff used to autogenerate selections
+    pre_selection, selection = _gen_entity_selection(config, data)
+
+    min_time = config.get("minTime")
+    max_time = config.get("maxTime")
+
+    # don't set something that's automatic
+    time = data["year"] if "year" in data.columns else data["date"]
+    if min_time == time.min():
+        min_time = None
+    if max_time == time.max():
+        max_time = None
+
+    if pre_selection:
+        if len(pre_selection) == 1:
+            pre_selection_s = f'[data.entity == "{pre_selection[0]}"]'
+        else:
+            pre_selection_s = (
+                ".query('entity in [\"" + '", "'.join(pre_selection) + "\"]')"
+            )
+    else:
+        pre_selection_s = ""
+
+    if selection and not min_time:
+        middle = '",\n    "'.join(selection)
+        selection_s = f""".select([
+    "{middle}"
+])"""
+    elif min_time and not selection:
+        selection_s = f""".select(
+    timespan=({min_time}, {max_time})
+)"""
+
+    elif selection and min_time:
+        middle = '",\n        "'.join(selection)
+        selection_s = f""".select(
+    entities=["{middle}"],
+    timespan=({min_time}, {max_time})
+)"""
+    else:
+        selection_s = ""
+
+    return pre_selection_s, selection_s

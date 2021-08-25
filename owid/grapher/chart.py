@@ -1,27 +1,19 @@
 #
-#  py_to_grapher.py
+#  chart.py
 #
 
 """
-Translation from a python charting interface to the OWID unstable
-grapher config API.
-
-Chart + Frame => Config with data
+Provides the DeclarativeConfig class, presenting a grammar of graphics
+that converts easily to and from Python code.
 """
 
-from enum import Enum
 from typing import Any, Dict, List, Optional, Literal, Tuple, Union, Iterator
-import string
-import random
 from dataclasses import dataclass, field
 import datetime as dt
-import json
 
 import pandas as pd
-from dataclasses_json import dataclass_json, LetterCase
+from dataclasses_json import dataclass_json
 from dateutil.parser import parse
-
-from .internal import ChartConfig, DataConfig, ChartType
 
 DATE_DISPLAY = {"yearIsDay": True, "zeroDay": "1970-01-01"}
 
@@ -33,22 +25,44 @@ class Encoding:
     c: Optional[str] = None
     facet: Optional[str] = None
 
-    def columns(self) -> Iterator[str]:
-        for c in ["x", "y", "c", "facet"]:
-            v = getattr(self, c)
+    def __iter__(self):
+        for k in ("x", "y", "c", "facet"):
+            v = getattr(self, k)
             if v is not None:
-                yield v
+                yield k, v
+
+    def is_empty(self) -> bool:
+        return all(v is None for _, v in self)
+
+    def to_py(self) -> str:
+        parts = [f'{k}="{v}"' for k, v in self]
+        kwargs = ",\n    ".join(parts)
+        return f".encode(\n    {kwargs}\n)"
 
 
 @dataclass
 class Labels:
-    title: Optional[str] = None
-    subtitle: Optional[str] = None
-    source_desc: Optional[str] = None
-    note: Optional[str] = None
+    title: str = ""
+    subtitle: str = ""
+    source_desc: str = ""
+    note: str = ""
 
     def is_defaults(self) -> bool:
         return self == Labels()
+
+    def __iter__(self) -> Iterator[Tuple[str, str]]:
+        for key in ["title", "subtitle", "source_desc", "note"]:
+            value = getattr(self, key)
+            if value:
+                yield key, value
+
+    def to_py(self) -> str:
+        if self.is_defaults():
+            return ""
+
+        parts = [f'{key}="{value}"' for key, value in self]
+        kwargs = ",\n    ".join(parts)
+        return f".label(\n    {kwargs}\n)"
 
 
 @dataclass
@@ -61,6 +75,20 @@ class Interaction:
     def is_defaults(self) -> bool:
         return self == Interaction()
 
+    def __iter__(self) -> Iterator[Tuple[str, Optional[bool]]]:
+        for k in ["allow_relative", "scale_control", "entity_control", "enable_map"]:
+            v = getattr(self, k)
+            if v is not None:
+                yield k, v
+
+    def to_py(self) -> str:
+        if self.is_defaults():
+            return ""
+
+        parts = [f"{k}={v}" for k, v in self]
+        kwargs = ",\n    ".join(parts)
+        return f".interact(\n    {kwargs}\n)"
+
 
 @dataclass
 class YearSpan:
@@ -69,6 +97,13 @@ class YearSpan:
 
     def is_defaults(self) -> bool:
         return self == YearSpan()
+
+    def to_py(self):
+        return f"({self.min_time}, {self.max_time})"
+
+    @classmethod
+    def from_tuple(cls, t: "YearTuple") -> "YearSpan":
+        return YearSpan(*t)
 
 
 @dataclass
@@ -79,6 +114,26 @@ class DateSpan:
     def is_defaults(self) -> bool:
         return self == DateSpan()
 
+    @classmethod
+    def from_tuple(cls, t: "DateTuple") -> "DateSpan":
+        lhs, rhs = t
+
+        # parse date strings for convenience
+        if isinstance(lhs, str):
+            lhs_clean = dt.date.fromisoformat(lhs)
+        else:
+            lhs_clean = lhs
+
+        if isinstance(rhs, str):
+            rhs_clean = dt.date.fromisoformat(rhs)
+        else:
+            rhs_clean = rhs
+
+        return DateSpan(lhs_clean, rhs_clean)
+
+    def to_py(self):
+        return f"({date_to_py(self.min_time)}, {date_to_py(self.max_time)})"
+
 
 @dataclass
 class Transform:
@@ -88,8 +143,27 @@ class Transform:
     def is_defaults(self) -> bool:
         return self == Transform()
 
+    def to_py(self) -> str:
+        if self.is_defaults():
+            return ""
+
+        scaffold = ".transform(\n    {}\n)"
+
+        parts = []
+        if self.stacked:
+            parts.append("stacked=True")
+        if self.relative:
+            parts.append("relative=True")
+
+        return scaffold.format(",\n    ".join(parts))
+
 
 TimeSpan = Union[YearSpan, DateSpan]
+
+# phew, strictly typing this interface for usability is hard!
+YearTuple = Tuple[Optional[int], Optional[int]]
+DateTuple = Tuple[Optional[Union[str, dt.date]], Optional[Union[str, dt.date]]]
+TimeTuple = Union[YearTuple, DateTuple]
 
 EntityNames = List[str]
 
@@ -98,6 +172,25 @@ EntityNames = List[str]
 class Selection:
     entities: Optional[EntityNames] = None
     timespan: Optional[TimeSpan] = None
+
+    def is_empty(self):
+        return self.entities is None and self.timespan is None
+
+    def to_py(self) -> str:
+        if self.is_empty():
+            return ""
+
+        parts = []
+        if self.entities:
+            parts.append(
+                "entities=[{}]".format(", ".join(f'"{name}"' for name in self.entities))
+            )
+
+        if self.timespan:
+            parts.append(f"timespan={self.timespan.to_py()}")
+
+        kwargs = ",\n    ".join(parts)
+        return f".select(\n    {kwargs}\n)"
 
 
 @dataclass
@@ -137,7 +230,7 @@ class DeclarativeConfig:
 
     def validate(self) -> None:
         # fail early if there's been a typo
-        for col in self.encoding.columns():
+        for _, col in self.encoding:
             if col and col not in self.data.columns:
                 raise ValueError(f"no such column: {col}")
 
@@ -188,204 +281,65 @@ class DeclarativeConfig:
     def select(
         self,
         entities: Optional[List[str]] = None,
-        timespan: Optional[TimeSpan] = None,
+        timespan: Optional[TimeTuple] = None,
     ) -> "DeclarativeConfig":
         if entities:
             self.selection.entities = entities
 
         if timespan:
-            self.selection.timespan = timespan
+            if is_date_tuple(timespan):
+                self.selection.timespan = DateSpan.from_tuple(timespan)  # type: ignore
+
+            elif is_year_tuple(timespan):
+                self.selection.timespan = YearSpan.from_tuple(timespan)  # type: ignore
+
+            else:
+                raise ValueError(
+                    "couldn't understand the timespan, it can be years like (1950, 1990), or dates like ('2021-05-03',)"
+                )
 
         return self
 
     def transform(
         self, stacked: bool = False, relative: bool = False
     ) -> "DeclarativeConfig":
-        self.transform.stacked = stacked
-        self.transform.relative = relative
+        self.transforms.stacked = stacked
+        self.transforms.relative = relative
         return self
 
+    def to_py(self, classname="DeclarativeConfig") -> str:
+        """
+        Generate the Python code that would recreate this declarative config.
+        """
+        encoding = self.encoding.to_py()
+        selection = self.selection.to_py()
+        transforms = self.transforms.to_py()
+        labels = self.labels.to_py()
+        interaction = self.interaction.to_py()
 
-def _to_py(config: DeclarativeConfig) -> str:
-    """
-    Generate the Python code that would recreate this declarative config.
-    """
-    encoding = _encoding_to_py(config.encoding)
-    preselection, selection = _selection_to_py(config.selection)
-    labels = _gen_labels(config.labels)
-    interaction = _gen_interaction(config.interaction)
-    transform = _transform_to_py(config.transforms)
-
-    return f"""
-grapher.Chart(
-    data{preselection}
-){encoding}{selection}{transform}{labels}{interaction}
+        return f"""
+{classname}(
+    data
+){encoding}{selection}{transforms}{labels}{interaction}
 """.strip()
 
 
-def _transform_to_py(transform: Transform) -> str:
-    if transform.is_defaults():
-        return ""
+def date_to_py(date: Optional[dt.date]) -> str:
+    if not date:
+        return "None"
 
-    scaffold = ".transform(\n    {}\n)"
-
-    parts = []
-    if transform.stacked:
-        parts.append("stacked=True")
-    if transform.relative:
-        parts.append("relative=True")
-
-    return scaffold.format(",\n    ".join(parts))
+    return f'"{date.isoformat()}"'
 
 
-def _encoding_to_py(encoding: Encoding) -> str:
-    if "date" in data:
-        x = "date"
-    else:
-        x = "year"
-
-    c: Optional[str] = None
-    if len(config["dimensions"]) > 1:
-        c = "variable"
-    elif len(config.get("selectedData", [])) > 1:
-        c = "entity"
-    elif len(config.get("selectedEntityNames", [])) > 1:
-        c = "entity"
-
-    parts = [f'x="{x}"', 'y="value"']
-    if c:
-        parts.append(f'c="{c}"')
-    encoding = ",\n    ".join(parts)
-
-    return f".encode(\n    {encoding}\n)"
+def is_date_tuple(t: Tuple[Any, Any]) -> bool:
+    lhs, rhs = t
+    lhs_ok = lhs is None or isinstance(lhs, (str, dt.date))
+    rhs_ok = rhs is None or isinstance(rhs, (str, dt.date))
+    return lhs_ok and rhs_ok
 
 
-def _selection_to_py(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
-    """
-    The config may select one variable and some of many entities, or it may select one entity and
-    some of many variables.
-
-    If we have multiple variables, pre-select the entity.
-    """
-    pre_selection, selection = _gen_entity_selection(config, data)
-
-    min_time = config.get("minTime")
-    max_time = config.get("maxTime")
-
-    # don't set something that's automatic
-    time = data["year"] if "year" in data.columns else data["date"]
-    if min_time == time.min():
-        min_time = None
-    if max_time == time.max():
-        max_time = None
-
-    if pre_selection:
-        if len(pre_selection) == 1:
-            pre_selection_s = f'[data.entity == "{pre_selection[0]}"]'
-        else:
-            pre_selection_s = (
-                ".query('entity in [\"" + '", "'.join(pre_selection) + "\"]')"
-            )
-    else:
-        pre_selection_s = ""
-
-    if selection and not min_time:
-        middle = '",\n    "'.join(selection)
-        selection_s = f""".select([
-    "{middle}"
-])"""
-    elif min_time and not selection:
-        selection_s = f""".select(
-    timespan=({min_time}, {max_time})
-)"""
-
-    elif selection and min_time:
-        middle = '",\n        "'.join(selection)
-        selection_s = f""".select(
-    entities=["{middle}"],
-    timespan=({min_time}, {max_time})
-)"""
-    else:
-        selection_s = ""
-
-    return pre_selection_s, selection_s
-
-
-def _gen_entity_selection(
-    config: dict, data: pd.DataFrame
-) -> Tuple[List[str], List[str]]:
-    entities: List[str] = []
-
-    if config.get("selectedEntityNames"):
-        entities = config["selectedEntityNames"]
-
-    elif config.get("selectedData") and len(config["selectedData"]) != len(
-        data.entity.unique()
-    ):
-        selected_ids = [str(s["entityId"]) for s in config["selectedData"]]
-
-        # requires an HTTP request
-        owid_data = get_owid_data(config)
-
-        entities = []
-        for entity_id in selected_ids:
-            try:
-                entities.append(owid_data["entityKey"][entity_id]["name"])
-            except KeyError:
-                # some charts refer to entities that no longer exist
-                # e.g. total-gov-expenditure-percapita-OECD
-                continue
-        entities = list(set(entities))
-
-    # we have an actual selection
-    if len(config["dimensions"]) > 1:
-        # do entity pre-selection
-        return entities, []
-
-    return [], entities
-
-
-def _gen_interaction(config: dict) -> str:
-    parts = []
-
-    entity_control = not config.get("hideEntityControls")
-    if entity_control:
-        parts.append("entity_control=True")
-
-    scale_control = config.get("yAxis", {}).get("canChangeScaleType")
-    if scale_control is not None:
-        parts.append(f"scale_control={scale_control}")
-
-    disable_relative = config.get("hideRelativeControls")
-    if disable_relative is not None:
-        parts.append(f"allow_relative={not disable_relative}")
-
-    if config.get("hasMapTab"):
-        parts.append("enable_map=True")
-
-    if parts:
-        return ".interact(\n    " + ",\n    ".join(parts) + "\n)"
-
-    return ""
-
-
-def _gen_labels(config: dict) -> str:
-    to_snake = {"sourceDesc": "source_desc"}
-
-    labels = {}
-    for label in ["title", "subtitle", "sourceDesc", "note"]:
-        if config.get(label):
-            labels[to_snake.get(label, label)] = " ".join(config[label].split())
-
-    if not labels:
-        return ""
-
-    return (
-        ".label(\n    "
-        + ",\n    ".join(f'{k}="{v}"' for k, v in labels.items())
-        + "\n)"
-    )
-
-
-class UnsupportedChartType(Exception):
-    pass
+def is_year_tuple(t: Tuple[Any, Any]) -> bool:
+    lhs, rhs = t
+    lhs_ok = lhs is None or isinstance(lhs, int)
+    rhs_ok = rhs is None or isinstance(rhs, int)
+    return lhs_ok and rhs_ok
