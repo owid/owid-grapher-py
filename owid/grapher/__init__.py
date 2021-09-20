@@ -394,6 +394,7 @@ def generate_iframe(config: Dict[str, Any]) -> str:
       <div class="site-tools"></div>
       <script src="https://polyfill.io/v3/polyfill.min.js?features=es6,fetch,URL,IntersectionObserver,IntersectionObserverEntry"></script>
       <script src="https://ourworldindata.org/assets/commons.js"></script>
+      <script src="https://ourworldindata.org/assets/vendors.js"></script>
       <script src="https://ourworldindata.org/assets/owid.js"></script>
       <script>
         window.runSiteFooterScripts();
