@@ -132,6 +132,8 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.1.4`
+    - Fix broken charts by updating embedded JS requests
 - `0.1.3`
     - Do not render the data when auto-generating notebooks
     - Allow fetching data by slug
