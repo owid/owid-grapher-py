@@ -4,16 +4,16 @@
 #  notebooks
 #
 
-from enum import Enum
-from typing import Any, Dict, List, Optional, Literal, Tuple
-import string
-import random
-from dataclasses import dataclass, field
 import datetime as dt
 import json
+import random
+import string
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
-from dataclasses_json import dataclass_json, LetterCase
+from dataclasses_json import LetterCase, dataclass_json
 from dateutil.parser import parse
 
 DATE_DISPLAY = {"yearIsDay": True, "zeroDay": "1970-01-01"}
@@ -128,7 +128,7 @@ class Chart:
     def export(self) -> Dict[str, Any]:
         self.config.auto_improve()
         config = self.config.to_dict()  # type: ignore
-        config.update(self.data_config().to_dict())  # type: ignore
+        config.update(self.data_config().to_dict())
         config = prune(config)
         return config
 
@@ -222,11 +222,10 @@ class Entity:
     code: Optional[str] = None
 
 
-@dataclass_json(letter_case=LetterCase.CAMEL)
 @dataclass
 class Dataset:
-    variables: Dict[str, Variable]
-    entity_key: Dict[str, Entity]
+    variables: Dict[int, Variable]
+    entity_key: Dict[int, Entity]
 
     @classmethod
     def from_frame(cls, df: pd.DataFrame, time_type: TimeType) -> "Dataset":
@@ -239,12 +238,12 @@ class Dataset:
             name: Entity(id=entity_id, name=name)
             for entity_id, name in enumerate(df.entity.unique(), 1)
         }
-        entity_key = {str(e.id): e for e in entities.values()}
+        entity_key = {e.id: e for e in entities.values()}
         df["entity_id"] = df.entity.apply(lambda v: entities[v].id)
         variables = {}
         for variable_id, variable in enumerate(sorted(df.variable.unique()), 1):
             var_data = df[df.variable == variable]
-            variables[str(variable_id)] = Variable(
+            variables[variable_id] = Variable(
                 id=variable_id,
                 name=variable,
                 years=var_data.year.to_list(),
@@ -256,12 +255,11 @@ class Dataset:
         return Dataset(variables, entity_key)
 
 
-@dataclass_json(letter_case=LetterCase.CAMEL)
 @dataclass
 class DataConfig:
-    owid_dataset: Dataset
+    dataset: Dataset
     dimensions: List[Dimension]
-    selected_data: List[Dict[str, int]]
+    selected_entity_names: List[str]
     min_time: Optional[int] = None
     max_time: Optional[int] = None
 
@@ -290,11 +288,7 @@ class DataConfig:
         dataset = Dataset.from_frame(df, time_type)
         entities = dataset.entity_key.values()
         if selection is None:
-            selected_data = [{"entityId": e.id} for e in entities]
-        else:
-            selected_data = [
-                {"entityId": e.id} for e in entities if e.name in selection
-            ]
+            selection = [e.name for e in entities]
 
         min_time, max_time = None, None
         if timespan:
@@ -305,9 +299,9 @@ class DataConfig:
             min_time, max_time = timespan
 
         return DataConfig(
-            owid_dataset=dataset,
+            dataset=dataset,
             dimensions=Dimension.from_dataset(dataset),
-            selected_data=selected_data,
+            selected_entity_names=selection,
             min_time=min_time,
             max_time=max_time,
         )
@@ -355,8 +349,46 @@ class DataConfig:
             }
         )
 
+    def to_dict(self) -> Dict[Any, Any]:
+        ds = {}
+        doc = {
+            'selectedEntityNames': self.selected_entity_names,
+            'owidDataset': ds,
+            'dimensions': [d.to_dict() for d in self.dimensions],
+        }
+
+        for var_id, var in self.dataset.variables.items():
+            ds[var_id] = {
+                'data': {
+                    'entities': var.entities,
+                    'years': var.years,
+                    'values': var.values,
+                },
+                'metadata': {
+                    'id': var_id,
+                    'name': var.name,
+                    'display': var.display,
+                    'dimensions': {
+                        'entities': {
+                            'values': [
+                                {"id": e.id, "name": e.name}
+                                for e in self.dataset.entity_key.values()
+                            ],
+                        },
+                        'years': {
+                            'values': [
+                                {"id": y} for y in sorted(set(var.years))
+                            ]
+                        },
+                    },
+                },
+            }
+
+        return doc
+
 
 def generate_iframe(config: Dict[str, Any]) -> str:
+    #return '<iframe src="http://localhost:8000/example2.html" style="width: 100%; height: 600px; border: 0px none;" ></iframe>'
     iframe_name = "".join(random.choice(string.ascii_lowercase) for _ in range(20))
     iframe_contents = f"""
 <!DOCTYPE html>
@@ -369,7 +401,7 @@ def generate_iframe(config: Dict[str, Any]) -> str:
     />
     <link
       rel="stylesheet"
-      href="https://ourworldindata.org/assets/commons.css"
+      href="https://ourworldindata.org/assets/common.css"
     />
     <link rel="stylesheet" href="https://ourworldindata.org/assets/owid.css" />
     <meta property="og:image:width" content="850" />
@@ -378,13 +410,6 @@ def generate_iframe(config: Dict[str, Any]) -> str:
       if (window != window.top)
         document.documentElement.classList.add("IsInIframe");
     </script>
-    <noscript
-      ><style>
-        figure {{
-          display: none !important;
-        }}
-      </style></noscript
-    >
   </head>
   <body class="StandaloneGrapherOrExplorerPage">
     <main>
@@ -393,23 +418,19 @@ def generate_iframe(config: Dict[str, Any]) -> str:
     </main>
       <div class="site-tools"></div>
       <script src="https://polyfill.io/v3/polyfill.min.js?features=es6,fetch,URL,IntersectionObserver,IntersectionObserverEntry"></script>
-      <script src="https://ourworldindata.org/assets/commons.js"></script>
-      <script src="https://ourworldindata.org/assets/vendors.js"></script>
-      <script src="https://ourworldindata.org/assets/owid.js"></script>
-      <script>
-        window.runSiteFooterScripts();
-      </script>
-    <script>
-      const jsonConfig = {json.dumps(config)};
-
-      window.Grapher.renderSingleGrapherOnGrapherPage(jsonConfig);
+      <script type="module" src="https://ourworldindata.org/assets/common.mjs"></script>
+      <script type="module" src="https://ourworldindata.org/assets/owid.mjs"></script>
+      <script type="module">
+        var jsonConfig = {json.dumps(config)};
+        jsonConfig.owidDataset = new Map(Object.entries(jsonConfig.owidDataset).map(([key, value]) => [parseInt(key), value]));
+        window.Grapher.renderSingleGrapherOnGrapherPage(jsonConfig);
     </script>
   </body>
 </html>
 """  # noqa
     iframe_contents = iframe_contents.replace("</script>", "<\\/script>")
     return f"""
-        <iframe id="{iframe_name}" style="width: 100%; height: 600px; border: 0px none;" src="about:blank"></iframe>
+        <iframe id="{iframe_name}" style="width: 100%; height: 600px; border: 0px none;" ></iframe>
         <script>
             document.getElementById("{iframe_name}").contentDocument.write(`{iframe_contents}`)
         </script>
