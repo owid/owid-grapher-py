@@ -1,0 +1,93 @@
+<html><head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,400i,700,700i|Playfair+Display:400,700&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="http://localhost:3030/assets/common.css">
+    <link rel="stylesheet" href="http://localhost:3030/assets/owid.css">
+    <meta property="og:image:width" content="850">
+    <meta property="og:image:height" content="600">
+    <script>
+      if (window != window.top)
+        document.documentElement.classList.add("IsInIframe");
+
+      const jsonConfig = {
+        "tab": "chart", 
+        "title": "Too many Koalas?", 
+        "subtitle": "", 
+        "note": "", 
+        "sourceDesc": "", 
+        "hideLogo": true, 
+        "isPublished": true, 
+        "type": "LineChart", 
+        "hideTitleAnnotation": false, 
+        "hideLegend": true, 
+        "hideEntityControls": true, 
+        "hideRelativeToggle": true, 
+        "hasMapTab": false, 
+        "stackMode": "absolute", 
+        "yAxis": {}, 
+        "dimensions": [
+          {"property": "y", "variableId": 1, "display": {}}
+        ],
+        "owidDataset": new Map([[
+          1,
+          {
+            "data": {
+              "years": [2000, 2010, 2020], 
+              "entities": [1, 1, 1], 
+              "values": [1234, 52342, 80123]
+            },
+            "metadata": {
+              "id": 1, 
+              "name": "dummy", 
+              "display": {},
+              "dimensions": {
+                "entities": {
+                  "values": [
+                    {
+                      "id": 1, 
+                      "name": "population"
+                    }
+                  ]
+                },
+                "years": {
+                  "values": [
+                    {
+                      "id": 2000
+                    }, 
+                    {
+                      "id": 2010
+                    }, 
+                    {
+                      "id": 2020
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]]), 
+        "selectedEntityNames": ["population"]
+      };
+    </script>
+    <noscript><style>
+        figure {
+          display: none !important;
+        }
+      </style></noscript>
+  </head>
+  <body class="StandaloneGrapherOrExplorerPage">
+    <main>
+      <figure data-grapher-src="">
+      </figure>
+    </main>
+      <div class="site-tools"></div>
+      <script src="https://polyfill.io/v3/polyfill.min.js?features=es6,fetch,URL,IntersectionObserver,IntersectionObserverEntry"></script>
+      <script type="module" src="http://localhost:3030/assets/common.mjs"></script>
+      <script type="module" src="http://localhost:3030/assets/owid.mjs"></script>
+      <script type="module">
+        window.Grapher.renderSingleGrapherOnGrapherPage(jsonConfig);
+      </script>
+    </script>
+  
+
+</body></html>
