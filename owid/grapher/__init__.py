@@ -352,33 +352,31 @@ class DataConfig:
     def to_dict(self) -> Dict[Any, Any]:
         ds = {}
         doc = {
-            'selectedEntityNames': self.selected_entity_names,
-            'owidDataset': ds,
-            'dimensions': [d.to_dict() for d in self.dimensions],
+            "selectedEntityNames": self.selected_entity_names,
+            "owidDataset": ds,
+            "dimensions": [d.to_dict() for d in self.dimensions],
         }
 
         for var_id, var in self.dataset.variables.items():
             ds[var_id] = {
-                'data': {
-                    'entities': var.entities,
-                    'years': var.years,
-                    'values': var.values,
+                "data": {
+                    "entities": var.entities,
+                    "years": var.years,
+                    "values": var.values,
                 },
-                'metadata': {
-                    'id': var_id,
-                    'name': var.name,
-                    'display': var.display,
-                    'dimensions': {
-                        'entities': {
-                            'values': [
+                "metadata": {
+                    "id": var_id,
+                    "name": var.name,
+                    "display": var.display,
+                    "dimensions": {
+                        "entities": {
+                            "values": [
                                 {"id": e.id, "name": e.name}
                                 for e in self.dataset.entity_key.values()
                             ],
                         },
-                        'years': {
-                            'values': [
-                                {"id": y} for y in sorted(set(var.years))
-                            ]
+                        "years": {
+                            "values": [{"id": y} for y in sorted(set(var.years))]
                         },
                     },
                 },
@@ -427,7 +425,7 @@ def generate_iframe(config: Dict[str, Any]) -> str:
   </body>
 </html>
 """  # noqa
-    assert '`' not in iframe_contents
+    assert "`" not in iframe_contents
     iframe_contents = iframe_contents.replace("</script>", "<\\/script>")
     return f"""
         <iframe id="{iframe_name}" style="width: 100%; height: 600px; border: 0px none;" ></iframe>

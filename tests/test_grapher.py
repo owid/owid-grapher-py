@@ -24,70 +24,49 @@ def test_prune_recursive():
     expected = {"y": {"f": 234, "g": {"j": 123}}}
     assert gr.prune(data) == expected
 
+
 def test_json_export():
-    df = pd.DataFrame({'year': [2000, 2010, 2020], 'population': [1234, 52342, 80123]})
-    ch = gr.Chart(
-        df
-    ).mark_line().encode(
-        x='year', 
-        y='population'
-    ).label('Too many Koalas?')
+    df = pd.DataFrame({"year": [2000, 2010, 2020], "population": [1234, 52342, 80123]})
+    ch = (
+        gr.Chart(df)
+        .mark_line()
+        .encode(x="year", y="population")
+        .label("Too many Koalas?")
+    )
     assert ch.export() == {
-        "tab": "chart", 
-        "title": "Too many Koalas?", 
-        "subtitle": "", 
-        "note": "", 
-        "sourceDesc": "", 
-        "hideLogo": True, 
-        "isPublished": True, 
-        "type": "LineChart", 
-        "hideTitleAnnotation": False, 
-        "hideLegend": True, 
-        "hideEntityControls": True, 
-        "hideRelativeToggle": True, 
-        "hasMapTab": False, 
-        "stackMode": "absolute", 
-        "yAxis": {}, 
-        "dimensions": [
-          {"property": "y", "variableId": 1, "display": {}}
-        ],
+        "tab": "chart",
+        "title": "Too many Koalas?",
+        "subtitle": "",
+        "note": "",
+        "sourceDesc": "",
+        "hideLogo": True,
+        "isPublished": True,
+        "type": "LineChart",
+        "hideTitleAnnotation": False,
+        "hideLegend": True,
+        "hideEntityControls": True,
+        "hideRelativeToggle": True,
+        "hasMapTab": False,
+        "stackMode": "absolute",
+        "yAxis": {},
+        "dimensions": [{"property": "y", "variableId": 1, "display": {}}],
         "owidDataset": {
             1: {
-            "data": {
-              "years": [2000, 2010, 2020], 
-              "entities": [1, 1, 1], 
-              "values": [1234, 52342, 80123]
-            },
-            "metadata": {
-              "id": 1, 
-              "name": "dummy", 
-              "display": {},
-              "dimensions": {
-                "entities": {
-                  "values": [
-                    {
-                      "id": 1, 
-                      "name": "population"
-                    }
-                  ]
+                "data": {
+                    "years": [2000, 2010, 2020],
+                    "entities": [1, 1, 1],
+                    "values": [1234, 52342, 80123],
                 },
-                "years": {
-                  "values": [
-                    {
-                      "id": 2000
-                    }, 
-                    {
-                      "id": 2010
-                    }, 
-                    {
-                      "id": 2020
-                    }
-                  ]
-                }
-              }
+                "metadata": {
+                    "id": 1,
+                    "name": "dummy",
+                    "display": {},
+                    "dimensions": {
+                        "entities": {"values": [{"id": 1, "name": "population"}]},
+                        "years": {"values": [{"id": 2000}, {"id": 2010}, {"id": 2020}]},
+                    },
+                },
             }
-          }
-        }, 
-        "selectedEntityNames": ["population"]
-      }
-
+        },
+        "selectedEntityNames": ["population"],
+    }
