@@ -134,6 +134,8 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.1.5`
+    - Update to new module layout and Grapher config changes
 - `0.1.4`
     - Fix broken charts by updating embedded JS requests
 - `0.1.3`
