@@ -4,7 +4,9 @@ _Experimental grapher package for use in Jupyter notebooks._
 
 ## Status
 
-This package relies on internal APIs that may not be supported in future, so please consider it experimental.
+❎ Not currently working
+
+This package relies on internal APIs that change on a regular basis, so please consider it experimental.
 
 ## Installing
 
