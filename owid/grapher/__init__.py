@@ -388,7 +388,6 @@ class DataConfig:
 
 
 def generate_iframe(config: Dict[str, Any]) -> str:
-    #return '<iframe src="http://localhost:8000/example2.html" style="width: 100%; height: 600px; border: 0px none;" ></iframe>'
     iframe_name = "".join(random.choice(string.ascii_lowercase) for _ in range(20))
     iframe_contents = f"""
 <!DOCTYPE html>
@@ -428,11 +427,13 @@ def generate_iframe(config: Dict[str, Any]) -> str:
   </body>
 </html>
 """  # noqa
+    assert '`' not in iframe_contents
     iframe_contents = iframe_contents.replace("</script>", "<\\/script>")
     return f"""
         <iframe id="{iframe_name}" style="width: 100%; height: 600px; border: 0px none;" ></iframe>
         <script>
-            document.getElementById("{iframe_name}").contentDocument.write(`{iframe_contents}`)
+            document.getElementById("{iframe_name}").contentDocument.write(`{iframe_contents}`);
+            document.getElementById("{iframe_name}").contentDocument.close();
         </script>
     """  # noqa
 
