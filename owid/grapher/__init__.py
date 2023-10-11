@@ -1,9 +1,3 @@
-# -*- coding: utf-8 -*-
-#
-#  grapher.py
-#  notebooks
-#
-
 import datetime as dt
 import json
 import random
@@ -70,6 +64,13 @@ class Chart:
         self.config.type = "LineChart"
         return self
 
+    def mark_area(self, stacked=False) -> "Chart":
+        if stacked:
+            self.config.type = "StackedArea"
+        else:
+            self.config.type = "Area"
+        return self
+
     def mark_bar(self, stacked=False) -> "Chart":
         if stacked:
             self.config.type = "StackedDiscreteBar"
@@ -79,25 +80,21 @@ class Chart:
 
     def interact(
         self,
-        allow_relative: Optional[bool] = None,
-        scale_control: Optional[bool] = None,
-        entity_control: Optional[bool] = None,
-        enable_map: Optional[bool] = None,
+        relative_control: Optional[bool] = True,
+        scale_control: Optional[bool] = True,
+        entity_control: Optional[bool] = True,
+        enable_map: Optional[bool] = True,
     ) -> "Chart":
-        if allow_relative is not None:
-            self.config.hide_relative_toggle = False
+        self.config.hide_relative_toggle = not relative_control
 
-        if scale_control is not None:
-            self.config.y_axis = {
-                "scaleType": "linear",
-                "canChangeScaleType": scale_control,
-            }
+        self.config.y_axis = {
+            "scaleType": "linear",
+            "canChangeScaleType": scale_control,
+        }
 
-        if entity_control is not None:
-            self.config.hide_entity_controls = not entity_control
+        self.config.hide_entity_controls = not entity_control
 
-        if enable_map:
-            self.config.has_map_tab = True
+        self.config.has_map_tab = enable_map
 
         return self
 
@@ -121,16 +118,26 @@ class Chart:
         return self
 
     def _repr_html_(self):
+        return self.export_html()
+    
+    def export_html(self):
         full_config = self.export()
         html = generate_iframe(full_config)
         return html
-
+    
     def export(self) -> Dict[str, Any]:
         self.config.auto_improve()
         config = self.config.to_dict()  # type: ignore
         config.update(self.data_config().to_dict())
         config = prune(config)
         return config
+
+    def write_html(self, path="export.html") -> str:
+        full_config = self.export()
+        html = generate_iframe(full_config)
+        
+        with open(path, "w") as f:
+            f.write(html)
 
     def data_config(self) -> "DataConfig":
         if not self.x or not self.y:
@@ -310,7 +317,7 @@ class DataConfig:
     def _reshape_line_chart(
         df: pd.DataFrame, x: str, y: str, c: Optional[str], time_type: TimeType
     ) -> pd.DataFrame:
-        fake_variable = "dummy"
+        variable = y
         df = (df[[x, y, c]] if c else df[[x, y]]).copy()  # type: ignore
         df["year"] = df.pop(x)
 
@@ -327,7 +334,7 @@ class DataConfig:
             df = df.melt("year")
 
         df["entity"] = df.pop("variable")
-        df["variable"] = fake_variable
+        df["variable"] = variable
 
         return df
 
@@ -339,7 +346,7 @@ class DataConfig:
         if c:
             variable = df[c].values
         else:
-            variable = "dummy"
+            variable = y
         return pd.DataFrame(
             {
                 "year": 2021,
@@ -384,11 +391,24 @@ class DataConfig:
 
         return doc
 
-
 def generate_iframe(config: Dict[str, Any]) -> str:
     iframe_name = "".join(random.choice(string.ascii_lowercase) for _ in range(20))
-    iframe_contents = f"""
+    iframe_contents =  generate_html(config) # noqa
+    
+    assert "`" not in iframe_contents
+    iframe_contents = iframe_contents.replace("</script>", "<\\/script>")
+    return f"""
+        <iframe id="{iframe_name}" style="width: 100%; height: 100%; border: 0px none;" ></iframe>
+        <script>
+            document.getElementById("{iframe_name}").contentDocument.write(`{iframe_contents}`);
+            document.getElementById("{iframe_name}").contentDocument.close();
+        </script>
+    """  # noqa
+
+def generate_html(config: Dict[str, Any]) -> str:
+    return f"""
 <!DOCTYPE html>
+<!-- https://ourworldindata.org/assets/ -->
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -396,13 +416,10 @@ def generate_iframe(config: Dict[str, Any]) -> str:
       href="https://fonts.googleapis.com/css?family=Lato:300,400,400i,700,700i|Playfair+Display:400,700&amp;display=swap"
       rel="stylesheet"
     />
-    <link
-      rel="stylesheet"
-      href="https://ourworldindata.org/assets/common.css"
-    />
-    <link rel="stylesheet" href="https://ourworldindata.org/assets/owid.css" />
-    <meta property="og:image:width" content="850" />
-    <meta property="og:image:height" content="600" />
+    <link rel="stylesheet" href="./owid.css" />
+    <!-- <meta property="og:image:width" content="850" /> -->
+    <!-- <meta property="og:image:height" content="600" /> -->
+    
     <script>
       if (window != window.top)
         document.documentElement.classList.add("IsInIframe");
@@ -415,8 +432,7 @@ def generate_iframe(config: Dict[str, Any]) -> str:
     </main>
       <div class="site-tools"></div>
       <script src="https://polyfill.io/v3/polyfill.min.js?features=es6,fetch,URL,IntersectionObserver,IntersectionObserverEntry"></script>
-      <script type="module" src="https://ourworldindata.org/assets/common.mjs"></script>
-      <script type="module" src="https://ourworldindata.org/assets/owid.mjs"></script>
+      <script type="module" src="./owid.mjs"></script>
       <script type="module">
         var jsonConfig = {json.dumps(config)};
         jsonConfig.owidDataset = new Map(Object.entries(jsonConfig.owidDataset).map(([key, value]) => [parseInt(key), value]));
@@ -424,17 +440,7 @@ def generate_iframe(config: Dict[str, Any]) -> str:
     </script>
   </body>
 </html>
-"""  # noqa
-    assert "`" not in iframe_contents
-    iframe_contents = iframe_contents.replace("</script>", "<\\/script>")
-    return f"""
-        <iframe id="{iframe_name}" style="width: 100%; height: 600px; border: 0px none;" ></iframe>
-        <script>
-            document.getElementById("{iframe_name}").contentDocument.write(`{iframe_contents}`);
-            document.getElementById("{iframe_name}").contentDocument.close();
-        </script>
-    """  # noqa
-
+"""
 
 def prune(d: Dict[str, Any]) -> Dict[str, Any]:
     return {
