@@ -414,7 +414,7 @@ def generate_iframe(config: Dict[str, Any]) -> str:
       </figure>
     </main>
       <div class="site-tools"></div>
-      <script src="https://polyfill.io/v3/polyfill.min.js?features=es6,fetch,URL,IntersectionObserver,IntersectionObserverEntry"></script>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/core-js/3.32.2/minified.min.js"></script>
       <script type="module" src="https://ourworldindata.org/assets/common.mjs"></script>
       <script type="module" src="https://ourworldindata.org/assets/owid.mjs"></script>
       <script type="module">
