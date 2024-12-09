@@ -80,7 +80,7 @@ Chart(...).transform(relative=True)
 
 ```python
 # enable relative mode toggle
-Chart(...).interact(relative=True)
+Chart(...).interact(relative_control=True)
 ```
 
 ```python
@@ -150,3 +150,8 @@ Auto-generate more types of notebooks correctly
     - Generate a notebook with python plotting commands for a subset of charts (`owid.grapher.notebook`)
 - `0.1.0`
     - Plot basic line charts, bar charts and stacked bar charts in the notebook
+
+## Dependencies
+
+- https://ourworldindata.org/assets/owid.css
+- https://ourworldindata.org/assets/owid.mjs
