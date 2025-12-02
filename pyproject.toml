@@ -1,6 +1,6 @@
 [project]
 name = "owid-grapher-py"
-version = "0.1.5"
+version = "0.1.6"
 description = "OWID charts for rendering in Jupyter notebooks."
 authors = [{name = "Lars Yencken", email = "lars@yencken.org"}]
 requires-python = ">=3.10"

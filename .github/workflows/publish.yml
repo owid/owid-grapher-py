@@ -1,0 +1,56 @@
+name: Publish to PyPI
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+
+    - name: Check if version was bumped
+      id: version-check
+      run: |
+        CURRENT_VERSION=$(grep '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+        PREVIOUS_VERSION=$(git show HEAD~1:pyproject.toml 2>/dev/null | grep '^version = ' | head -1 | sed 's/version = "\(.*\)"/\1/' || echo "")
+
+        echo "Current version: $CURRENT_VERSION"
+        echo "Previous version: $PREVIOUS_VERSION"
+
+        if [ "$CURRENT_VERSION" = "$PREVIOUS_VERSION" ]; then
+          echo "Version was not bumped, skipping publish"
+          echo "should_publish=false" >> $GITHUB_OUTPUT
+        else
+          echo "Version was bumped, proceeding with publish"
+          echo "should_publish=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Set up Python
+      if: steps.version-check.outputs.should_publish == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install UV
+      if: steps.version-check.outputs.should_publish == 'true'
+      run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    - name: Build and publish
+      if: steps.version-check.outputs.should_publish == 'true'
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.POETRY_PYPI_TOKEN_PYPI }}
+      run: |
+        rm -rf dist
+        uv build
+        uvx twine upload dist/*
