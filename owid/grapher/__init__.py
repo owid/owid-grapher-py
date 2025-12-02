@@ -6,8 +6,6 @@
 
 import datetime as dt
 import json
-import random
-import string
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -122,6 +120,7 @@ class Chart:
         return html
 
     def export(self) -> Dict[str, Any]:
+        """Export the full config including data (for debugging)."""
         self.config.auto_improve()
         config = self.config.to_dict()  # type: ignore
         config.update(self.data_config().to_dict())
@@ -367,46 +366,68 @@ class DataConfig:
 
 
 def generate_iframe(config: Dict[str, Any]) -> str:
+    import random
+    import string
+
     iframe_name = "".join(random.choice(string.ascii_lowercase) for _ in range(20))
+
+    # Extract data and config for the new GrapherState API
+    csv_data = _config_to_csv(config)
+    grapher_config = _extract_grapher_config(config)
+
     iframe_contents = f"""
 <!DOCTYPE html>
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link
-      href="https://fonts.googleapis.com/css?family=Lato:300,400,400i,700,700i|Playfair+Display:400,700&amp;display=swap"
+      href="https://fonts.googleapis.com/css?family=Lato:300,400,400i,700,700i|Playfair+Display:400,700&display=swap"
       rel="stylesheet"
     />
     <link
       rel="stylesheet"
-      href="https://ourworldindata.org/assets/common.css"
+      href="https://expose-grapher-state.owid.pages.dev/assets/owid.css"
     />
-    <link rel="stylesheet" href="https://ourworldindata.org/assets/owid.css" />
-    <meta property="og:image:width" content="850" />
-    <meta property="og:image:height" content="600" />
-    <script>
-      if (window != window.top)
-        document.documentElement.classList.add("IsInIframe");
-    </script>
+    <style>
+      body {{ margin: 0; padding: 0; }}
+      figure {{ width: 100%; height: 100%; margin: 0; }}
+      .error {{ color: red; padding: 20px; background: #fee; border-radius: 5px; }}
+    </style>
   </head>
-  <body class="StandaloneGrapherOrExplorerPage">
-    <main>
-      <figure data-grapher-src>
-      </figure>
-    </main>
-      <div class="site-tools"></div>
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/core-js/3.32.2/minified.min.js"></script>
-      <script type="module" src="https://ourworldindata.org/assets/common.mjs"></script>
-      <script type="module" src="https://ourworldindata.org/assets/owid.mjs"></script>
-      <script type="module">
-        var jsonConfig = {json.dumps(config)};
-        jsonConfig.owidDataset = new Map(Object.entries(jsonConfig.owidDataset).map(([key, value]) => [parseInt(key), value]));
-        window.Grapher.renderSingleGrapherOnGrapherPage(jsonConfig);
+  <body>
+    <figure id="grapher-container"></figure>
+    <script type="module" src="https://expose-grapher-state.owid.pages.dev/assets/owid.mjs"></script>
+    <script type="module">
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const {{ Grapher, GrapherState, OwidTable, React, createRoot }} = window;
+      const container = document.getElementById("grapher-container");
+
+      if (!GrapherState || !OwidTable || !React || !createRoot) {{
+        container.innerHTML = '<div class="error">Required exports not available. Check console.</div>';
+        throw new Error("Required exports not available");
+      }}
+
+      const csvData = `{csv_data}`;
+      const table = new OwidTable(csvData);
+
+      const grapherState = new GrapherState({{
+        table: table,
+        ...{json.dumps(grapher_config)},
+        isConfigReady: true,
+        isDataReady: true,
+      }});
+
+      const reactRoot = createRoot(container);
+      reactRoot.render(React.createElement(Grapher, {{ grapherState }}));
     </script>
   </body>
 </html>
 """  # noqa
-    assert "`" not in iframe_contents
+    # Escape for the outer template literal (order matters: backslash first)
+    iframe_contents = iframe_contents.replace("\\", "\\\\")
+    iframe_contents = iframe_contents.replace("`", "\\`")
+    iframe_contents = iframe_contents.replace("${", "\\${")
     iframe_contents = iframe_contents.replace("</script>", "<\\/script>")
     return f"""
         <iframe id="{iframe_name}" style="width: 100%; height: 600px; border: 0px none;" ></iframe>
@@ -415,6 +436,104 @@ def generate_iframe(config: Dict[str, Any]) -> str:
             document.getElementById("{iframe_name}").contentDocument.close();
         </script>
     """  # noqa
+
+
+def _config_to_csv(config: Dict[str, Any]) -> str:
+    """Convert the old owidDataset format to CSV for OwidTable."""
+    owid_dataset = config.get("owidDataset", {})
+
+    # Build entity name lookup from the first variable's metadata
+    entity_lookup: Dict[int, str] = {}
+    rows = []
+
+    for var_id, var_data in owid_dataset.items():
+        metadata = var_data.get("metadata", {})
+        var_name = metadata.get("name", f"var_{var_id}")
+
+        # Build entity lookup from dimensions
+        dims = metadata.get("dimensions", {})
+        entity_values = dims.get("entities", {}).get("values", [])
+        for e in entity_values:
+            entity_lookup[e["id"]] = e["name"]
+
+        # Extract data points
+        data = var_data.get("data", {})
+        entities = data.get("entities", [])
+        years = data.get("years", [])
+        values = data.get("values", [])
+
+        for entity_id, year, value in zip(entities, years, values):
+            entity_name = entity_lookup.get(entity_id, f"entity_{entity_id}")
+            rows.append(
+                {
+                    "entityName": entity_name,
+                    "entityId": entity_id,
+                    "year": year,
+                    var_name: value,
+                }
+            )
+
+    if not rows:
+        return "entityName,entityId,year,value\n"
+
+    # Get all unique column names (variable names)
+    all_columns = ["entityName", "entityId", "year"]
+    var_columns = set()
+    for row in rows:
+        var_columns.update(k for k in row.keys() if k not in all_columns)
+    all_columns.extend(sorted(var_columns))
+
+    # Build CSV
+    csv_lines = [",".join(all_columns)]
+    for row in rows:
+        csv_lines.append(",".join(str(row.get(col, "")) for col in all_columns))
+
+    return "\n".join(csv_lines)
+
+
+def _extract_grapher_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract GrapherState config from the old format."""
+    owid_dataset = config.get("owidDataset", {})
+
+    # Get variable names for ySlugs
+    y_slugs = []
+    for var_data in owid_dataset.values():
+        metadata = var_data.get("metadata", {})
+        var_name = metadata.get("name", "")
+        if var_name:
+            y_slugs.append(var_name)
+
+    # Map old chart type to new chartTypes array
+    chart_type = config.get("type", "LineChart")
+
+    grapher_config: Dict[str, Any] = {
+        "chartTypes": [chart_type],
+        "hideLogo": config.get("hideLogo", True),
+        "selectedEntityNames": config.get("selectedEntityNames", []),
+    }
+
+    if y_slugs:
+        grapher_config["ySlugs"] = " ".join(y_slugs)
+
+    if config.get("title"):
+        grapher_config["title"] = config["title"]
+
+    if config.get("subtitle"):
+        grapher_config["subtitle"] = config["subtitle"]
+
+    if config.get("note"):
+        grapher_config["note"] = config["note"]
+
+    if config.get("sourceDesc"):
+        grapher_config["sourceDesc"] = config["sourceDesc"]
+
+    if config.get("hasMapTab"):
+        grapher_config["hasMapTab"] = config["hasMapTab"]
+
+    if config.get("stackMode"):
+        grapher_config["stackMode"] = config["stackMode"]
+
+    return grapher_config
 
 
 def prune(d: Dict[str, Any]) -> Dict[str, Any]:
