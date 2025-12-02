@@ -4,18 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**owid-grapher-py** is an experimental Python package for creating OWID (Our World in Data) charts in Jupyter notebooks. It provides a declarative API similar to Altair for building interactive charts that render using OWID's grapher JS library.
+**owid-grapher-py** is a Python package for creating OWID (Our World in Data) charts in Jupyter notebooks. It provides a declarative API similar to Altair for building interactive charts that render using OWID's grapher JS library.
 
-**Status**: ❎ Not currently working - relies on internal APIs that change regularly.
+**Status**: ✅ Working (experimental) - uses the GrapherState API from OWID's staging bundle.
 
 ## Development Setup
 
-This project uses **Poetry** for dependency management and **Make** for common tasks.
+This project uses **uv** for dependency management and **Make** for common tasks.
 
 ### Initial Setup
 
 ```bash
-poetry install
+make .venv
 ```
 
 This creates a `.venv` virtual environment with all dependencies.
@@ -28,9 +28,12 @@ This creates a `.venv` virtual environment with all dependencies.
 # Run all checks (formatting, linting, type checking, unit tests)
 make test
 
+# Check only changed files (faster)
+make check
+
 # Run individual checks
-make check-formatting    # Check code formatting with black
-make lint                # Run flake8 linting
+make check-formatting    # Check code formatting with ruff
+make lint                # Run ruff linting
 make check-typing        # Run pyright type checking
 make unittest            # Run pytest tests
 
@@ -41,7 +44,7 @@ make watch
 ### Formatting
 
 ```bash
-make format              # Auto-format code with black
+make format              # Auto-format code with ruff
 ```
 
 ### Running Single Tests
@@ -57,7 +60,7 @@ make format              # Auto-format code with black
 The project uses a **namespace package** structure under `owid/`:
 
 - **`owid/grapher/`** - Core charting functionality
-  - `__init__.py` - Main `Chart` class and config dataclasses
+  - `__init__.py` - Main `Chart` class, config dataclasses, and iframe rendering
   - `notebook.py` - Tools for auto-generating notebooks from existing charts
 
 - **`owid/site/`** - Integration with live OWID website
@@ -70,14 +73,22 @@ The project uses a **namespace package** structure under `owid/`:
 Charts are built using a fluent/method-chaining API:
 
 ```python
-Chart(df).mark_line().encode(x='year', y='population', c='region')
+Chart(df).mark_line().encode(x='year', y='population', c='country')
 ```
 
 The `Chart` class:
 - Stores a pandas DataFrame internally
 - Builds up a `ChartConfig` object through method calls
-- Generates OWID's internal JSON config format via `export()`
-- Renders in Jupyter via `_repr_html_()` which returns an iframe with embedded config
+- Generates OWID's internal config format via `export()`
+- Renders in Jupyter via `_repr_html_()` which returns an iframe
+
+#### Rendering Pipeline
+
+The `generate_iframe()` function:
+1. Converts the internal config to CSV format via `_config_to_csv()`
+2. Extracts GrapherState options via `_extract_grapher_config()`
+3. Creates an iframe that loads OWID's JS bundle from `expose-grapher-state.owid.pages.dev`
+4. Uses `OwidTable` to parse CSV and `GrapherState` + `Grapher` React component to render
 
 #### Configuration System
 
@@ -102,6 +113,14 @@ Implemented via `mark_*()` methods:
 - `mark_bar(stacked=True)` → "StackedDiscreteBar"
 - `mark_scatter()` → "ScatterPlot"
 
+#### Interactivity
+
+The `interact()` method enables UI controls:
+- `allow_relative=True` - Shows relative/absolute toggle
+- `entity_control=True` - Shows country/entity picker
+- `scale_control=True` - Shows log/linear scale toggle
+- `enable_map=True` - Adds map tab (and defaults to it)
+
 ### Integration with OWID Site
 
 The `owid.site` module fetches live chart data:
@@ -111,25 +130,30 @@ The `owid.site` module fetches live chart data:
 
 ## Type Checking
 
-Uses **pyright** instead of mypy due to namespace package structure. Configuration in `pyproject.toml`:
+Uses **pyright** for static type checking. Configuration in `pyproject.toml`:
 
 ```toml
 [tool.pyright]
-include = ["owid/**", "tests/**"]
+include = ["owid", "tests"]
 ```
 
 ## Code Quality Tools
 
-- **black** - Code formatting
-- **flake8** - Linting (config in `.flake8`)
+- **ruff** - Linting and formatting
 - **pyright** - Static type checking
 - **pytest** - Unit testing
 
 ## Key Dependencies
 
-- `pandas` - Data manipulation
-- `dataclasses-json` - Config serialization
-- `requests` - Fetching data from OWID site
-- `python-dateutil` - Date parsing
-- `jsonschema` - Config validation
-- `nbformat` - Jupyter notebook generation
+- `pandas>=2.2.3` - Data manipulation
+- `dataclasses-json>=0.6.7` - Config serialization
+- `requests>=2.26.0` - Fetching data from OWID site
+- `python-dateutil>=2.8.1` - Date parsing
+- `jsonschema>=3.2.0` - Config validation
+
+## Publishing
+
+The package is published to PyPI via GitHub Actions. To release:
+1. Bump version in `pyproject.toml`
+2. Update changelog in `README.md`
+3. Push to master - the workflow auto-publishes if version changed
