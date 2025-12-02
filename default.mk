@@ -40,9 +40,9 @@ test-default: check-formatting check-linting check-typing unittest
 
 check-default:
 	@echo '==> Lint & Format & Typecheck changed files'
-	@git fetch -q origin main
+	@git fetch -q origin master
 	@RELATIVE_PATH=$$(pwd | sed "s|^$$(git rev-parse --show-toplevel)/||"); \
-	CHANGED_PY_FILES=$$(git diff --name-only origin/main HEAD -- . && git diff --name-only && git ls-files --others --exclude-standard | grep '\.py'); \
+	CHANGED_PY_FILES=$$(git diff --name-only origin/master HEAD -- . && git diff --name-only && git ls-files --others --exclude-standard | grep '\.py'); \
 	CHANGED_PY_FILES=$$(echo "$$CHANGED_PY_FILES" | sed "s|^$$RELATIVE_PATH/||" | grep '\.py' | xargs -I {} sh -c 'test -f {} && echo {}' | grep -v '{}'); \
 	FILE_COUNT=$$(echo "$$CHANGED_PY_FILES" | wc -l); \
 	if [ "$$FILE_COUNT" -le 10 ] && [ "$$FILE_COUNT" -gt 0 ]; then \

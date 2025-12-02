@@ -17,7 +17,9 @@ import requests
 from dateutil.parser import parse
 
 DATA_URL = "https://api.ourworldindata.org/v1/indicators/{variable_id}.data.json"
-METADATA_URL = "https://api.ourworldindata.org/v1/indicators/{variable_id}.metadata.json"
+METADATA_URL = (
+    "https://api.ourworldindata.org/v1/indicators/{variable_id}.metadata.json"
+)
 GRAPHER_PREFIX = "https://ourworldindata.org/grapher/"
 EPOCH_DATE = "2020-01-21"
 
@@ -38,7 +40,9 @@ def get_chart_config(url: str, force: bool = False) -> dict:
     return json.loads(config)
 
 
-def get_chart_data(url: Optional[str] = None, slug: Optional[str] = None) -> pd.DataFrame:
+def get_chart_data(
+    url: Optional[str] = None, slug: Optional[str] = None
+) -> pd.DataFrame:
     "Fetch the data from an OWID chart page as a data frame."
     if not url and not slug:
         raise ValueError("must provide an url or a slug")

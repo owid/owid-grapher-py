@@ -32,7 +32,9 @@ class Chart:
         self.selection: Optional[List[str]] = None
         self.timespan: Optional[Tuple[Any, Any]] = None
 
-    def encode(self, x: Optional[str] = None, y: Optional[str] = None, c: Optional[str] = None) -> "Chart":
+    def encode(
+        self, x: Optional[str] = None, y: Optional[str] = None, c: Optional[str] = None
+    ) -> "Chart":
         self.x = x
         self.y = y
         self.c = c
@@ -49,7 +51,9 @@ class Chart:
 
         return self
 
-    def label(self, title: str = "", subtitle: str = "", source_desc: str = "", note: str = "") -> "Chart":
+    def label(
+        self, title: str = "", subtitle: str = "", source_desc: str = "", note: str = ""
+    ) -> "Chart":
         self.config.title = title
         self.config.subtitle = subtitle
         self.config.source_desc = source_desc
@@ -92,6 +96,7 @@ class Chart:
 
         if enable_map:
             self.config.has_map_tab = True
+            self.config.tab = "map"
 
         return self
 
@@ -191,7 +196,10 @@ class Dimension:
 
     @classmethod
     def from_dataset(cls, dataset: "Dataset") -> List["Dimension"]:
-        return [Dimension(property="y", variable_id=v.id) for v in dataset.variables.values()]
+        return [
+            Dimension(property="y", variable_id=v.id)
+            for v in dataset.variables.values()
+        ]
 
 
 @dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
@@ -226,7 +234,10 @@ class Dataset:
 
         # NOTE: Grapher has separate concepts for variables and entities,
         #       but we simplify here and consider then both variables
-        entities = {name: Entity(id=entity_id, name=name) for entity_id, name in enumerate(df.entity.unique(), 1)}
+        entities = {
+            name: Entity(id=entity_id, name=name)
+            for entity_id, name in enumerate(df.entity.unique(), 1)
+        }
         entity_key = {e.id: e for e in entities.values()}
         df["entity_id"] = df.entity.apply(lambda v: entities[v].id)
         variables = {}
@@ -296,7 +307,9 @@ class DataConfig:
         )
 
     @staticmethod
-    def _reshape_line_chart(df: pd.DataFrame, x: str, y: str, c: Optional[str], time_type: TimeType) -> pd.DataFrame:
+    def _reshape_line_chart(
+        df: pd.DataFrame, x: str, y: str, c: Optional[str], time_type: TimeType
+    ) -> pd.DataFrame:
         fake_variable = "dummy"
         df = (df[[x, y, c]] if c else df[[x, y]]).copy()  # type: ignore
         df["year"] = df.pop(x)
@@ -319,7 +332,9 @@ class DataConfig:
         return df
 
     @staticmethod
-    def _reshape_discrete_bar(df: pd.DataFrame, x: str, y: str, c: Optional[str] = None) -> pd.DataFrame:
+    def _reshape_discrete_bar(
+        df: pd.DataFrame, x: str, y: str, c: Optional[str] = None
+    ) -> pd.DataFrame:
         assert df[y].dtype == "object"
         if c:
             variable = df[c].values
@@ -355,9 +370,14 @@ class DataConfig:
                     "display": var.display,
                     "dimensions": {
                         "entities": {
-                            "values": [{"id": e.id, "name": e.name} for e in self.dataset.entity_key.values()],
+                            "values": [
+                                {"id": e.id, "name": e.name}
+                                for e in self.dataset.entity_key.values()
+                            ],
                         },
-                        "years": {"values": [{"id": y} for y in sorted(set(var.years))]},
+                        "years": {
+                            "values": [{"id": y} for y in sorted(set(var.years))]
+                        },
                     },
                 },
             }
@@ -392,6 +412,11 @@ def generate_iframe(config: Dict[str, Any]) -> str:
       body {{ margin: 0; padding: 0; }}
       figure {{ width: 100%; height: 100%; margin: 0; }}
       .error {{ color: red; padding: 20px; background: #fee; border-radius: 5px; }}
+      /* Hide UI elements for cleaner notebook display */
+      .grapher-share-button, .shareMenuOuter, .GrapherShareMenu,
+      a[data-track-note="chart_click_explore"], .exploreDataButton,
+      .originUrl, .SourcesFooter, .SourcesFooterHTML,
+      .GrapherFooter__sourcesAndLicense {{ display: none !important; }}
     </style>
   </head>
   <body>
@@ -430,10 +455,19 @@ def generate_iframe(config: Dict[str, Any]) -> str:
     iframe_contents = iframe_contents.replace("${", "\\${")
     iframe_contents = iframe_contents.replace("</script>", "<\\/script>")
     return f"""
-        <iframe id="{iframe_name}" style="width: 100%; height: 600px; border: 0px none;" ></iframe>
+        <div id="{iframe_name}_wrapper" style="position: relative; width: 100%; height: 600px;">
+            <iframe id="{iframe_name}" style="width: 100%; height: 100%; border: 0px none; pointer-events: none;"></iframe>
+        </div>
         <script>
             document.getElementById("{iframe_name}").contentDocument.write(`{iframe_contents}`);
             document.getElementById("{iframe_name}").contentDocument.close();
+            // Enable interaction on click (wrapper captures click), disable on mouse leave
+            document.getElementById("{iframe_name}_wrapper").addEventListener("click", function() {{
+                document.getElementById("{iframe_name}").style.pointerEvents = "auto";
+            }});
+            document.getElementById("{iframe_name}").addEventListener("mouseleave", function() {{
+                this.style.pointerEvents = "none";
+            }});
         </script>
     """  # noqa
 
@@ -530,14 +564,29 @@ def _extract_grapher_config(config: Dict[str, Any]) -> Dict[str, Any]:
     if config.get("hasMapTab"):
         grapher_config["hasMapTab"] = config["hasMapTab"]
 
+    if config.get("tab"):
+        grapher_config["tab"] = config["tab"]
+
     if config.get("stackMode"):
         grapher_config["stackMode"] = config["stackMode"]
+
+    # Pass through hide toggles (False means show the control)
+    if "hideRelativeToggle" in config:
+        grapher_config["hideRelativeToggle"] = config["hideRelativeToggle"]
+
+    if "hideEntityControls" in config:
+        grapher_config["hideEntityControls"] = config["hideEntityControls"]
+
+    if config.get("yAxis"):
+        grapher_config["yAxis"] = config["yAxis"]
 
     return grapher_config
 
 
 def prune(d: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: prune(v) if isinstance(v, dict) else v for k, v in d.items() if v is not None}
+    return {
+        k: prune(v) if isinstance(v, dict) else v for k, v in d.items() if v is not None
+    }
 
 
 def _timespan_from_date(timespan: Tuple[str, str]) -> Tuple[int, int]:
