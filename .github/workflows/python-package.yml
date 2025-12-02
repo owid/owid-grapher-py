@@ -11,39 +11,32 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.8, 3.9]
+        python-version: ["3.10", "3.11", "3.12"]
 
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install Poetry
-      run: |
-        pip install poetry
-        poetry --version
+    - name: Install uv
+      run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
     - name: Install packages
-      run: |
-        poetry install
+      run: uv sync --all-extras
 
     - name: Check formatting
-      run: |
-        make check-formatting
+      run: make check-formatting
 
     - name: Lint
-      run: |
-        make lint
+      run: make lint
 
     - name: Check typing
-      run: |
-        make check-typing
+      run: make check-typing
 
     - name: Unit test
-      run: |
-        make unittest
+      run: make unittest
