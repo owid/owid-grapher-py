@@ -8,15 +8,16 @@
 Automatically generating notebooks from graphers.
 """
 
-from os.path import join, isdir
-from os import mkdir
-from typing import Optional, Iterator, List, Tuple
 import json
+from os import mkdir
+from os.path import isdir, join
+from typing import Iterator, List, Optional, Tuple
+
+import click
+import nbformat as nbf
 
 # import jsonschema
 import pandas as pd
-import nbformat as nbf
-import click
 
 from owid.site import get_owid_data, owid_data_to_frame
 
@@ -127,9 +128,7 @@ def _gen_selection(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
         if len(pre_selection) == 1:
             pre_selection_s = f'[data.entity == "{pre_selection[0]}"]'
         else:
-            pre_selection_s = (
-                ".query('entity in [\"" + '", "'.join(pre_selection) + "\"]')"
-            )
+            pre_selection_s = ".query('entity in [\"" + '", "'.join(pre_selection) + "\"]')"
     else:
         pre_selection_s = ""
 
@@ -155,17 +154,13 @@ def _gen_selection(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
     return pre_selection_s, selection_s
 
 
-def _gen_entity_selection(
-    config: dict, data: pd.DataFrame
-) -> Tuple[List[str], List[str]]:
+def _gen_entity_selection(config: dict, data: pd.DataFrame) -> Tuple[List[str], List[str]]:
     entities: List[str] = []
 
     if config.get("selectedEntityNames"):
         entities = config["selectedEntityNames"]
 
-    elif config.get("selectedData") and len(config["selectedData"]) != len(
-        data.entity.unique()
-    ):
+    elif config.get("selectedData") and len(config["selectedData"]) != len(data.entity.unique()):
         selected_ids = [str(s["entityId"]) for s in config["selectedData"]]
 
         # requires an HTTP request
@@ -224,11 +219,7 @@ def _gen_labels(config: dict) -> str:
     if not labels:
         return ""
 
-    return (
-        ".label(\n    "
-        + ",\n    ".join(f'{k}="{v}"' for k, v in labels.items())
-        + "\n)"
-    )
+    return ".label(\n    " + ",\n    ".join(f'{k}="{v}"' for k, v in labels.items()) + "\n)"
 
 
 class UnsupportedChartType(Exception):
@@ -268,13 +259,9 @@ def _new_notebook(slug: str, title: str, py: str):
     if title:
         cells.append(nbf.v4.new_markdown_cell(f"# {title}"))
 
-    cells.append(
-        nbf.v4.new_code_cell("import pandas as pd\n" "from owid import grapher, site")
-    )
+    cells.append(nbf.v4.new_code_cell("import pandas as pd\nfrom owid import grapher, site"))
 
-    cells.append(
-        nbf.v4.new_code_cell(f'data = site.get_chart_data(slug="{slug}")\ndata.head()')
-    )
+    cells.append(nbf.v4.new_code_cell(f'data = site.get_chart_data(slug="{slug}")\ndata.head()'))
 
     cells.append(nbf.v4.new_code_cell(py))
 
@@ -327,4 +314,4 @@ def iter_jsonl(input_file: str) -> Iterator[dict]:
 
 
 if __name__ == "__main__":
-    main()
+    main()  # type: ignore
