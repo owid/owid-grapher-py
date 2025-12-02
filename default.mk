@@ -2,7 +2,7 @@
 #  default.mk
 #
 
-SRC = chart_server_python tests
+SRC = src tests
 
 default: help
 
