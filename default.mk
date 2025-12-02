@@ -2,44 +2,96 @@
 #  default.mk
 #
 
-SRC = src test
+SRC = chart_server_python tests
 
-default:
+default: help
+
+help-default:
 	@echo 'Available commands:'
 	@echo
 	@echo '  make test      Run all linting and unit tests'
 	@echo '  make watch     Run all tests, watching for changes'
+	@echo '  make check     Format & Lint & Typecheck changed files from master'
 	@echo
 
 # check formatting before lint, since an autoformat might fix linting issues
-test-default: check-formatting lint check-typing unittest
+test-default: check-formatting check-linting check-typing unittest
 
-.venv: pyproject.toml poetry.lock poetry.toml
-	poetry install
-	touch $@
+.sanity-check:
+	@echo '==> Checking your Python setup'
+
+	@if python -c "import sys; exit(0 if sys.platform.startswith('win32') else 1)"; then \
+		echo 'ERROR: you are using a non-WSL Python interpreter, please consult the'; \
+		echo '       docs on how to swich to WSL Python on windows'; \
+		echo '       https://github.com/owid/etl/'; \
+		exit 1; \
+	fi
+	touch .sanity-check
+
+
+.venv-default: .sanity-check
+	@echo '==> Installing packages'
+	@if [ -n "$(PYTHON_VERSION)" ]; then \
+		echo '==> Using Python version $(PYTHON_VERSION)'; \
+		[ -f $$HOME/.cargo/env ] && . $$HOME/.cargo/env || true && UV_PYTHON=$(PYTHON_VERSION) uv sync --all-extras; \
+	else \
+		[ -f $$HOME/.cargo/env ] && . $$HOME/.cargo/env || true && uv sync --all-extras; \
+	fi
+
+check-default:
+	@echo '==> Lint & Format & Typecheck changed files'
+	@git fetch -q origin main
+	@RELATIVE_PATH=$$(pwd | sed "s|^$$(git rev-parse --show-toplevel)/||"); \
+	CHANGED_PY_FILES=$$(git diff --name-only origin/main HEAD -- . && git diff --name-only && git ls-files --others --exclude-standard | grep '\.py'); \
+	CHANGED_PY_FILES=$$(echo "$$CHANGED_PY_FILES" | sed "s|^$$RELATIVE_PATH/||" | grep '\.py' | xargs -I {} sh -c 'test -f {} && echo {}' | grep -v '{}'); \
+	FILE_COUNT=$$(echo "$$CHANGED_PY_FILES" | wc -l); \
+	if [ "$$FILE_COUNT" -le 10 ] && [ "$$FILE_COUNT" -gt 0 ]; then \
+		echo "$$CHANGED_PY_FILES" | xargs .venv/bin/ruff check --fix; \
+		echo "$$CHANGED_PY_FILES" | xargs .venv/bin/ruff format; \
+		echo "$$CHANGED_PY_FILES" | xargs .venv/bin/pyright; \
+	else \
+		echo "Too many files, checking all files instead."; \
+		make lint; \
+		make format; \
+		make check-typing; \
+	fi
 
 lint-default: .venv
-	@echo '==> Linting'
-	.venv/bin/flake8 $(SRC)
+	@echo '==> Linting & Sorting imports'
+	@.venv/bin/ruff check --fix $(SRC)
+
+check-linting-default: .venv
+	@echo '==> Checking linting'
+	@.venv/bin/ruff check $(SRC)
 
 check-formatting-default: .venv
 	@echo '==> Checking formatting'
-	.venv/bin/black --check $(SRC)
+	@.venv/bin/ruff format --check $(SRC)
 
 check-typing-default: .venv
 	@echo '==> Checking types'
-	PYTHONPATH=. .venv/bin/mypy $(SRC)
+	. .venv/bin/activate && .venv/bin/pyright $(SRC)
 
 unittest-default: .venv
 	@echo '==> Running unit tests'
-	@PYTHONPATH=. .venv/bin/pytest
+	.venv/bin/pytest $(SRC)
 
 format-default: .venv
 	@echo '==> Reformatting files'
-	.venv/bin/black $(SRC)
+	@.venv/bin/ruff format $(SRC)
+
+coverage-default: .venv
+	@echo '==> Unit testing with coverage'
+	.venv/bin/pytest --cov=owid --cov-report=term-missing tests
 
 watch-default: .venv
-	.venv/bin/watchmedo shell-command -c 'clear; make test' --recursive --drop .
+	@echo '==> Watching for changes and re-running checks'
+	.venv/bin/watchmedo shell-command -c 'clear; make check' --recursive --drop .
+
+bump-default: .venv
+	@echo '==> Bumping version'
+	.venv/bin/bump2version --no-tag  --no-commit $(filter-out $@, $(MAKECMDGOALS))
+
 
 # allow you to override a command, e.g. "watch", but if you do not, then use
 # the default

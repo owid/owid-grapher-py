@@ -34,9 +34,7 @@ class Chart:
         self.selection: Optional[List[str]] = None
         self.timespan: Optional[Tuple[Any, Any]] = None
 
-    def encode(
-        self, x: Optional[str] = None, y: Optional[str] = None, c: Optional[str] = None
-    ) -> "Chart":
+    def encode(self, x: Optional[str] = None, y: Optional[str] = None, c: Optional[str] = None) -> "Chart":
         self.x = x
         self.y = y
         self.c = c
@@ -53,9 +51,7 @@ class Chart:
 
         return self
 
-    def label(
-        self, title: str = "", subtitle: str = "", source_desc: str = "", note: str = ""
-    ) -> "Chart":
+    def label(self, title: str = "", subtitle: str = "", source_desc: str = "", note: str = "") -> "Chart":
         self.config.title = title
         self.config.subtitle = subtitle
         self.config.source_desc = source_desc
@@ -155,7 +151,7 @@ class TimeType(Enum):
 ChartType = Literal["LineChart", "DiscreteBar", "ScatterPlot", "StackedDiscreteBar"]
 
 
-@dataclass_json(letter_case=LetterCase.CAMEL)
+@dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
 @dataclass
 class ChartConfig:
     tab: str = "chart"
@@ -179,7 +175,7 @@ class ChartConfig:
             self.hide_title_annotation = False
 
 
-@dataclass_json(letter_case=LetterCase.CAMEL)
+@dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
 @dataclass
 class Dimension:
     """
@@ -196,13 +192,10 @@ class Dimension:
 
     @classmethod
     def from_dataset(cls, dataset: "Dataset") -> List["Dimension"]:
-        return [
-            Dimension(property="y", variable_id=v.id)
-            for v in dataset.variables.values()
-        ]
+        return [Dimension(property="y", variable_id=v.id) for v in dataset.variables.values()]
 
 
-@dataclass_json(letter_case=LetterCase.CAMEL)
+@dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
 @dataclass
 class Variable:
     id: int
@@ -214,7 +207,7 @@ class Variable:
     display: Optional[Dict[str, Any]] = None
 
 
-@dataclass_json(letter_case=LetterCase.CAMEL)
+@dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
 @dataclass
 class Entity:
     id: int
@@ -234,10 +227,7 @@ class Dataset:
 
         # NOTE: Grapher has separate concepts for variables and entities,
         #       but we simplify here and consider then both variables
-        entities = {
-            name: Entity(id=entity_id, name=name)
-            for entity_id, name in enumerate(df.entity.unique(), 1)
-        }
+        entities = {name: Entity(id=entity_id, name=name) for entity_id, name in enumerate(df.entity.unique(), 1)}
         entity_key = {e.id: e for e in entities.values()}
         df["entity_id"] = df.entity.apply(lambda v: entities[v].id)
         variables = {}
@@ -307,9 +297,7 @@ class DataConfig:
         )
 
     @staticmethod
-    def _reshape_line_chart(
-        df: pd.DataFrame, x: str, y: str, c: Optional[str], time_type: TimeType
-    ) -> pd.DataFrame:
+    def _reshape_line_chart(df: pd.DataFrame, x: str, y: str, c: Optional[str], time_type: TimeType) -> pd.DataFrame:
         fake_variable = "dummy"
         df = (df[[x, y, c]] if c else df[[x, y]]).copy()  # type: ignore
         df["year"] = df.pop(x)
@@ -332,9 +320,7 @@ class DataConfig:
         return df
 
     @staticmethod
-    def _reshape_discrete_bar(
-        df: pd.DataFrame, x: str, y: str, c: Optional[str] = None
-    ) -> pd.DataFrame:
+    def _reshape_discrete_bar(df: pd.DataFrame, x: str, y: str, c: Optional[str] = None) -> pd.DataFrame:
         assert df[y].dtype == "object"
         if c:
             variable = df[c].values
@@ -354,7 +340,7 @@ class DataConfig:
         doc = {
             "selectedEntityNames": self.selected_entity_names,
             "owidDataset": ds,
-            "dimensions": [d.to_dict() for d in self.dimensions],
+            "dimensions": [d.to_dict() for d in self.dimensions],  # type: ignore
         }
 
         for var_id, var in self.dataset.variables.items():
@@ -370,14 +356,9 @@ class DataConfig:
                     "display": var.display,
                     "dimensions": {
                         "entities": {
-                            "values": [
-                                {"id": e.id, "name": e.name}
-                                for e in self.dataset.entity_key.values()
-                            ],
+                            "values": [{"id": e.id, "name": e.name} for e in self.dataset.entity_key.values()],
                         },
-                        "years": {
-                            "values": [{"id": y} for y in sorted(set(var.years))]
-                        },
+                        "years": {"values": [{"id": y} for y in sorted(set(var.years))]},
                     },
                 },
             }
@@ -437,9 +418,7 @@ def generate_iframe(config: Dict[str, Any]) -> str:
 
 
 def prune(d: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        k: prune(v) if isinstance(v, dict) else v for k, v in d.items() if v is not None
-    }
+    return {k: prune(v) if isinstance(v, dict) else v for k, v in d.items() if v is not None}
 
 
 def _timespan_from_date(timespan: Tuple[str, str]) -> Tuple[int, int]:

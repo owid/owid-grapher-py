@@ -4,11 +4,12 @@
 #  owid-grapher-py
 #
 
-import pandas as pd
 import json
 
-from owid.grapher import notebook
+import pandas as pd
+
 from owid import grapher, site  # noqa
+from owid.grapher import notebook
 
 
 def test_translate_line_chart_no_frills():
@@ -110,7 +111,7 @@ grapher.Chart(
 
 def test_round_trip():
     "Can we replicate the chart with life expectancy."
-    for slug in ["life-expectancy", "total-gov-expenditure-percapita-OECD"]:
+    for slug in ["life-expectancy", "population"]:
         url = f"https://ourworldindata.org/grapher/{slug}"
         config = site.get_chart_config(url)
         data = site.get_chart_data(url)
