@@ -180,7 +180,7 @@ make check
 
 ## Changelog
 
-- `0.1.6` (unreleased)
+- `0.1.6`
     - Update to new GrapherState API with OwidTable
     - Fix iframe scroll behavior in notebooks
     - Hide unnecessary UI elements for cleaner notebook display
