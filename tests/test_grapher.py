@@ -27,7 +27,12 @@ def test_prune_recursive():
 
 def test_json_export():
     df = pd.DataFrame({"year": [2000, 2010, 2020], "population": [1234, 52342, 80123]})
-    ch = gr.Chart(df).mark_line().encode(x="year", y="population").label("Too many Koalas?")
+    ch = (
+        gr.Chart(df)
+        .mark_line()
+        .encode(x="year", y="population")
+        .label("Too many Koalas?")
+    )
     assert ch.export() == {
         "tab": "chart",
         "title": "Too many Koalas?",

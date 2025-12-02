@@ -1,54 +1,71 @@
 # owid-grapher-py
 
-_Experimental grapher package for use in Jupyter notebooks._
+Create interactive [Our World in Data](https://ourworldindata.org) charts in Jupyter notebooks.
 
 ## Status
 
-❎ Not currently working
+✅ Working (experimental)
 
-This package relies on internal APIs that change on a regular basis, so please consider it experimental.
+This package uses the OWID Grapher library to render interactive charts. The API may change as OWID's internal APIs evolve.
+
+## Requirements
+
+- Python 3.10+
+- Jupyter notebook or JupyterLab
 
 ## Installing
 
-```
+```bash
 pip install git+https://github.com/owid/owid-grapher-py
 ```
 
-## How to use
+## Quick Start
 
 Get your data into a tidy data frame, then wrap it in a chart object and explain what marks you want and how to encode the dimensions you have (inspired by Altair).
 
 ```python
+import pandas as pd
 from owid.grapher import Chart
 
-Chart(df).mark_line().encode(x='year', y='population').label('Too many Koalas?')
-```
+# Create sample data
+df = pd.DataFrame({
+    'year': [2000, 2005, 2010, 2015, 2020] * 3,
+    'country': ['Australia'] * 5 + ['New Zealand'] * 5 + ['Japan'] * 5,
+    'population': [19.2, 20.4, 22.0, 23.8, 25.7,
+                   3.9, 4.1, 4.4, 4.6, 5.1,
+                   126.8, 127.8, 128.1, 127.1, 125.8]
+})
 
-### Chart types
-
-You specify your chart type with one of:
-
-- `mark_line()`
-- `mark_bar()`
-
-#### Line chart
-
-```python
-# a third dimension can be encoded in the color
+# Create an interactive line chart
 Chart(df).mark_line().encode(
-    x='year', y='population', c='region'
-).label(title='Population by region')
+    x='year',
+    y='population',
+    c='country'
+).label(title='Population Over Time')
 ```
 
-#### Bar chart
+## Chart Types
+
+### Line Chart
 
 ```python
-# regular bar chart
-Chart(df).mark_bar().encode(x='population', y='region')
+Chart(df).mark_line().encode(
+    x='year',
+    y='population',
+    c='country'  # color by country
+).label(title='Population by Country')
 ```
 
+### Bar Chart
+
 ```python
-# stacked bar chart
+# Simple bar chart
+Chart(df_2020).mark_bar().encode(
+    x='population',
+    y='country'
+).label(title='Population in 2020')
+
+# Stacked bar chart
 Chart(df).mark_bar(stacked=True).encode(
     x='energy_generated',
     y='country',
@@ -56,84 +73,118 @@ Chart(df).mark_bar(stacked=True).encode(
 )
 ```
 
-### Labels
+### Map View
 
 ```python
-Chart(df).encode(
-    x='year', y='population'
+# Enable map tab (opens to map by default)
+Chart(df).mark_line().encode(
+    x='year',
+    y='population',
+    c='country'
+).interact(enable_map=True)
+```
+
+## Labels
+
+```python
+Chart(df).mark_line().encode(
+    x='year',
+    y='population',
+    c='country'
 ).label(
-    title='Very important',
-    subtitle='Less important',
-    note='An extra note',
-    source_desc='This data was randomly generated'
+    title='Population Trends',
+    subtitle='Select countries to compare',
+    note='Data is illustrative',
+    source_desc='Sample data'
 )
 ```
 
-### Transforms
+## Interactivity
 
 ```python
-# plot relative change
+# Enable relative mode toggle
+Chart(...).interact(allow_relative=True)
+
+# Enable log/linear scale toggle
+Chart(...).interact(scale_control=True)
+
+# Enable country/entity picker
+Chart(...).interact(entity_control=True)
+
+# Enable map tab
+Chart(...).interact(enable_map=True)
+
+# Combine multiple options
+Chart(df).mark_line().encode(
+    x='year', y='population', c='country'
+).interact(
+    allow_relative=True,
+    entity_control=True,
+    enable_map=True
+)
+```
+
+## Data Selection
+
+```python
+# Select specific entities and time range
+Chart(df).mark_line().encode(
+    x='year', y='population', c='country'
+).select(
+    entities=['Australia', 'Japan'],
+    timespan=(2000, 2015)
+)
+```
+
+## Transforms
+
+```python
+# Plot relative change
 Chart(...).transform(relative=True)
 ```
 
-### Interactivity
+## Export Config
+
+View the underlying JSON configuration:
 
 ```python
-# enable relative mode toggle
-Chart(...).interact(relative=True)
+chart = Chart(df).mark_line().encode(x='year', y='population', c='country')
+chart.export()  # Returns the grapher config dict
 ```
 
-```python
-# let you switch between log and linear scale
-Chart(...).interact(scale_control=True)
+## How It Works
+
+OWID's Grapher library uses a JSON config format for all charts. This package:
+
+1. Takes your pandas DataFrame and chart configuration
+2. Converts it to the Grapher's internal format (CSV + GrapherState config)
+3. Renders an iframe in Jupyter that loads the OWID Grapher library
+4. The Grapher library renders the interactive chart
+
+## Development
+
+```bash
+# Clone the repo
+git clone https://github.com/owid/owid-grapher-py
+cd owid-grapher-py
+
+# Install dependencies
+make .venv
+
+# Run tests
+make test
+
+# Check changed files
+make check
 ```
-
-```python
-# enable the country/entity picker
-Chart(...).interact(entity_control=True)
-```
-
-```python
-# enable the map tab
-Chart(...).interact(enable_map=True)
-```
-
-### Data selection
-
-```python
-Chart(...).select(
-    entities=['Australia', 'New Zealand'],
-    timespan=(1990, 2020)
-)
-```
-
-## How it works
-
-OWID's grapher JS library has an internal JSON config format that all charts are created from. When you create a Python chart object, you are building up enough information to make a JSON config. You can see the config that gets generated by typing `.export()` on one of your chart objects in the notebook.
-
-When Jupyter asks to display the chart object, it calls its `_repr_html_()` method, and the chart return an html snippet containing an iframe and some js to inject dynamic iframe contents. This makes an iframe equivalent to a pre-prepared chart page on the Our World In Data site. Neat, huh?
-
-## TODO
-
-This project should not attempt feature parity with grapher, but should walk the line between
-making an expressive charting tool and making something that can reproduce a large percentage of
-our existing charts. Some ideas for improvement:
-
-Enable `grapher.Chart()` to support more chart types:
-
-- [ ] Scatterplots
-- [ ] Axis bounds
-- [ ] Line charts without a time axis
-
-Auto-generate more types of notebooks correctly
-
-- [ ] Multi-variable single entity line-charts
-- [ ] Bar charts
-- [ ] Stacked bar charts
-- [ ] Time selection
 
 ## Changelog
 
+- `0.1.6` (unreleased)
+    - Update to new GrapherState API with OwidTable
+    - Fix iframe scroll behavior in notebooks
+    - Hide unnecessary UI elements for cleaner notebook display
+    - Update dependencies to match owid-catalog requirements
 - `0.1.5`
     - Update to new module layout and Grapher config changes
 - `0.1.4`
@@ -145,8 +196,8 @@ Auto-generate more types of notebooks correctly
 - `0.1.2`
     - Support timespans with `select()`
 - `0.1.1`
-    - Improve `select()`, `interact()` and `label()` methods on `Chart` to work in more cases
-    - Helpers in to download the config or the data from a chart page (`owid.site`)
-    - Generate a notebook with python plotting commands for a subset of charts (`owid.grapher.notebook`)
+    - Improve `select()`, `interact()` and `label()` methods on `Chart`
+    - Helpers to download config/data from chart pages (`owid.site`)
+    - Generate notebooks with Python plotting commands (`owid.grapher.notebook`)
 - `0.1.0`
-    - Plot basic line charts, bar charts and stacked bar charts in the notebook
+    - Plot basic line charts, bar charts and stacked bar charts
