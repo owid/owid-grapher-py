@@ -73,6 +73,23 @@ Chart(df).mark_bar(stacked=True).encode(
 )
 ```
 
+### Scatter Plot
+
+```python
+# Basic scatter plot
+Chart(df).mark_scatter().encode(
+    x='gdp_per_capita',
+    y='life_expectancy'
+).label(title='GDP vs Life Expectancy')
+
+# Scatter plot with color grouping
+Chart(df).mark_scatter().encode(
+    x='gdp_per_capita',
+    y='life_expectancy',
+    c='country'  # color by country
+).label(title='GDP vs Life Expectancy by Country')
+```
+
 ### Map View
 
 ```python
@@ -177,6 +194,25 @@ make test
 # Check changed files
 make check
 ```
+
+## TODO
+
+This project should not attempt feature parity with grapher, but should walk the line between
+making an expressive charting tool and making something that can reproduce a large percentage of
+our existing charts. Some ideas for improvement:
+
+Enable `grapher.Chart()` to support more chart types:
+
+- [x] Scatterplots
+- [ ] Axis bounds
+- [ ] Line charts without a time axis
+
+Auto-generate more types of notebooks correctly
+
+- [ ] Multi-variable single entity line-charts
+- [ ] Bar charts
+- [ ] Stacked bar charts
+- [ ] Time selection
 
 ## Changelog
 
