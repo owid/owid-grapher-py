@@ -30,19 +30,25 @@ class Chart:
         self.x: Optional[str] = None
         self.y: Optional[str] = None
         self.c: Optional[str] = None
+        self.size: Optional[str] = None
         self.time_type = TimeType.YEAR
         self.selection: Optional[List[str]] = None
         self.timespan: Optional[Tuple[Any, Any]] = None
 
     def encode(
-        self, x: Optional[str] = None, y: Optional[str] = None, c: Optional[str] = None
+        self,
+        x: Optional[str] = None,
+        y: Optional[str] = None,
+        c: Optional[str] = None,
+        size: Optional[str] = None,
     ) -> "Chart":
         self.x = x
         self.y = y
         self.c = c
+        self.size = size
 
         # fail early if there's been a typo
-        for col in [x, y, c]:
+        for col in [x, y, c, size]:
             if col and col not in self.data.columns:
                 raise ValueError(f"no such column: {col}")
 
@@ -142,6 +148,7 @@ class Chart:
             x=self.x,
             y=self.y,
             c=self.c,
+            size=self.size,
             time_type=self.time_type,
             chart_type=self.config.type,
             selection=self.selection,
@@ -185,120 +192,28 @@ class ChartConfig:
 @dataclass
 class Dimension:
     """
-    "dimensions": [{"property": "y", "variableId": 1}],
+    "dimensions": [{"property": "y", "variableName": "population"}],
     """
 
     property: Literal["y", "x", "color"]
-    variable_id: int
+    variable_name: str
     display: Optional[dict] = field(default_factory=dict)
-
-    @classmethod
-    def single_y(cls) -> "Dimension":
-        return Dimension(property="y", variable_id=1)
-
-    @classmethod
-    def from_dataset(
-        cls,
-        dataset: "Dataset",
-        chart_type: ChartType = "LineChart",
-        x_col: Optional[str] = None,
-        y_col: Optional[str] = None,
-    ) -> List["Dimension"]:
-        if chart_type == "ScatterPlot":
-            # Scatter plots need x and y dimensions
-            # Find variables by name for correct mapping
-            y_var_id = None
-            x_var_id = None
-
-            for var_id, var in dataset.variables.items():
-                if y_col and var.name == y_col:
-                    y_var_id = var_id
-                if x_col and var.name == x_col:
-                    x_var_id = var_id
-
-            if y_var_id and x_var_id:
-                return [
-                    Dimension(property="y", variable_id=y_var_id),
-                    Dimension(property="x", variable_id=x_var_id),
-                ]
-            else:
-                # Fallback to old behavior if names not found
-                variables = list(dataset.variables.values())
-                if len(variables) >= 2:
-                    return [
-                        Dimension(property="y", variable_id=variables[0].id),
-                        Dimension(property="x", variable_id=variables[1].id),
-                    ]
-                else:
-                    return [
-                        Dimension(property="y", variable_id=v.id) for v in variables
-                    ]
-        else:
-            return [
-                Dimension(property="y", variable_id=v.id)
-                for v in dataset.variables.values()
-            ]
-
-
-@dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
-@dataclass
-class Variable:
-    id: int
-    name: str
-    years: List[int]
-    entities: List[int]
-    values: List[float]
-    short_unit: Optional[str] = None
-    display: Optional[Dict[str, Any]] = None
-
-
-@dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
-@dataclass
-class Entity:
-    id: int
-    name: str
-    code: Optional[str] = None
-
-
-@dataclass
-class Dataset:
-    variables: Dict[int, Variable]
-    entity_key: Dict[int, Entity]
-
-    @classmethod
-    def from_frame(cls, df: pd.DataFrame, time_type: TimeType) -> "Dataset":
-        if set(df.columns) != {"year", "variable", "value", "entity"}:
-            raise ValueError("expected normalised data frame")
-
-        # NOTE: Grapher has separate concepts for variables and entities,
-        #       but we simplify here and consider then both variables
-        entities = {
-            name: Entity(id=entity_id, name=name)
-            for entity_id, name in enumerate(df.entity.unique(), 1)
-        }
-        entity_key = {e.id: e for e in entities.values()}
-        df["entity_id"] = df.entity.apply(lambda v: entities[v].id)
-        variables = {}
-        for variable_id, variable in enumerate(sorted(df.variable.unique()), 1):
-            var_data = df[df.variable == variable]
-            variables[variable_id] = Variable(
-                id=variable_id,
-                name=variable,
-                years=var_data.year.to_list(),
-                entities=var_data.entity_id.to_list(),
-                values=var_data.value.to_list(),
-                display=DATE_DISPLAY if time_type == TimeType.DAY else {},
-            )
-
-        return Dataset(variables, entity_key)
 
 
 @dataclass
 class DataConfig:
-    dataset: Dataset
-    dimensions: List[Dimension]
+    """Stores data and column mappings for chart rendering."""
+
+    df: pd.DataFrame
+    x_col: str  # Time column (or x-axis for scatter)
+    y_cols: List[str]  # Value column(s)
+    entity_col: Optional[str]  # Entity/color column
+    year_col: Optional[str]  # Year column (for scatter plots with time)
+    size_col: Optional[str]  # Size column (for scatter plots)
+    time_type: TimeType
+    chart_type: ChartType
     selected_entity_names: List[str]
-    min_time: Optional[Any] = None  # Can be int, "latest", or None
+    min_time: Optional[Any] = None
     max_time: Optional[int] = None
 
     @classmethod
@@ -308,147 +223,99 @@ class DataConfig:
         x: str,
         y: str,
         c: Optional[str] = None,
+        size: Optional[str] = None,
         time_type: "TimeType" = TimeType.YEAR,
         chart_type: ChartType = "LineChart",
         selection: Optional[List[str]] = None,
         timespan: Optional[Tuple[Any, Any]] = None,
     ) -> "DataConfig":
-        # reshape tidy data into (year, entity, variable, value) form
-        if chart_type == "LineChart":
-            df = cls._reshape_line_chart(df, x, y, c, time_type)
+        df = df.copy()
+
+        year_col: Optional[str] = None
+
+        # Determine entity column and selection
+        if chart_type == "ScatterPlot":
+            # For scatter: x and y are both value columns, c is entity
+            entity_col = c
+            y_cols = [x, y]  # Both are "value" columns for scatter
+            if selection is None:
+                selection = list(df[c].unique()) if c else ["data"]
+            # Check if dataframe has a year column
+            if "year" in df.columns:
+                year_col = "year"
         elif chart_type in ("DiscreteBar", "StackedDiscreteBar"):
-            df = cls._reshape_discrete_bar(df, x, y, c)
-        elif chart_type == "ScatterPlot":
-            df = cls._reshape_scatter_plot(df, x, y, c)
+            # For bar charts: y is entity, x is value
+            entity_col = y
+            y_cols = [x]
+            if selection is None:
+                selection = list(df[y].unique())
         else:
-            raise ValueError(f"chart type {chart_type} is not yet implemented")
+            # For line charts: x is time, y is value, c is entity
+            entity_col = c
+            y_cols = [y]
+            if selection is None:
+                if c:
+                    selection = list(df[c].unique())
+                else:
+                    selection = [y]  # Use column name as entity
 
-        df = df.dropna()  # type: ignore
-
-        dataset = Dataset.from_frame(df, time_type)
-        entities = dataset.entity_key.values()
-        if selection is None:
-            selection = [e.name for e in entities]
-
+        # Handle timespan
         min_time, max_time = None, None
         if timespan:
             if time_type == TimeType.DAY:
-                # remap to a timespan in integer days
                 timespan = _timespan_from_date(timespan)
-
             min_time, max_time = timespan
 
-        # For scatter plots, use 'latest' by default
+        # For scatter plots, always use 'latest'
         if chart_type == "ScatterPlot" and min_time is None:
-            min_time = "latest"  # type: ignore
+            min_time = "latest"
 
         return DataConfig(
-            dataset=dataset,
-            dimensions=Dimension.from_dataset(dataset, chart_type, x_col=x, y_col=y),
+            df=df,
+            x_col=x,
+            y_cols=y_cols,
+            entity_col=entity_col,
+            year_col=year_col,
+            size_col=size,
+            time_type=time_type,
+            chart_type=chart_type,
             selected_entity_names=selection,
             min_time=min_time,
             max_time=max_time,
         )
 
-    @staticmethod
-    def _reshape_line_chart(
-        df: pd.DataFrame, x: str, y: str, c: Optional[str], time_type: TimeType
-    ) -> pd.DataFrame:
-        fake_variable = "dummy"
-        df = (df[[x, y, c]] if c else df[[x, y]]).copy()  # type: ignore
-        df["year"] = df.pop(x)
-
-        if time_type == TimeType.DAY:
-            offset = dt.date(1970, 1, 1).toordinal()
-            df["year"] = pd.to_datetime(df.year).dt.date.apply(  # type: ignore
-                lambda d: d.toordinal() - offset
-            )
-
-        if c:
-            df["variable"] = df.pop(c)
-            df["value"] = df.pop(y)
+    def _get_dimensions(self) -> List[Dimension]:
+        """Build dimension list based on chart type."""
+        if self.chart_type == "ScatterPlot":
+            # For scatter: y_cols[0] is x-axis, y_cols[1] is y-axis
+            return [
+                Dimension(property="y", variable_name=self.y_cols[1]),
+                Dimension(property="x", variable_name=self.y_cols[0]),
+            ]
         else:
-            df = df.melt("year")
-
-        df["entity"] = df.pop("variable")
-        df["variable"] = fake_variable
-
-        return df
-
-    @staticmethod
-    def _reshape_discrete_bar(
-        df: pd.DataFrame, x: str, y: str, c: Optional[str] = None
-    ) -> pd.DataFrame:
-        assert df[y].dtype == "object"
-        if c:
-            variable = df[c].values
-        else:
-            variable = "dummy"
-        return pd.DataFrame(
-            {
-                "year": 2021,
-                "variable": variable,
-                "entity": df[y].values,
-                "value": df[x].values,
-            }
-        )
-
-    @staticmethod
-    def _reshape_scatter_plot(
-        df: pd.DataFrame, x: str, y: str, c: Optional[str] = None
-    ) -> pd.DataFrame:
-        """Reshape data for scatter plots.
-
-        For scatter plots, we need both x and y values in a single row per entity,
-        stored as separate variables (columns) in the normalized format.
-        Each observation gets a unique year (using row index) to prevent merging.
-        """
-        if c:
-            # c is the entity dimension
-            entity_col = c
-        else:
-            # No color dimension, create a single entity
-            df = df.copy()
-            df["__entity"] = "data"
-            entity_col = "__entity"
-
-        # Create normalized format with entity, year, and both x/y as separate columns
-        # Use row index as year to ensure each point is separate
-        result_rows = []
-
-        for idx, row in df.iterrows():
-            entity_name = row[entity_col]
-            # Use index as year to make each observation unique
-            year = idx if isinstance(idx, int) else 2021
-
-            # Create a row with x value
-            result_rows.append(
-                {
-                    "entity": entity_name,
-                    "year": year,
-                    "variable": x,
-                    "value": row[x],
-                }
-            )
-
-            # Create a row with y value
-            result_rows.append(
-                {
-                    "entity": entity_name,
-                    "year": year,
-                    "variable": y,
-                    "value": row[y],
-                }
-            )
-
-        return pd.DataFrame(result_rows)
+            # For other charts: one dimension per y column
+            return [Dimension(property="y", variable_name=col) for col in self.y_cols]
 
     def to_dict(self, chart_type: ChartType) -> Dict[Any, Any]:
-        ds = {}
-        doc = {
+        display = DATE_DISPLAY if self.time_type == TimeType.DAY else {}
+
+        # Build metadata for columns
+        metadata: Dict[str, Any] = {}
+        for col in self.y_cols:
+            metadata[col] = {"display": display}
+
+        # Rename entity column to entityName for OwidTable
+        df = self.df.copy()
+        if self.entity_col and self.entity_col in df.columns:
+            df = df.rename(columns={self.entity_col: "entityName"})
+
+        doc: Dict[str, Any] = {
             "selectedEntityNames": self.selected_entity_names,
-            "owidDataset": ds,
-            "dimensions": [d.to_dict() for d in self.dimensions],  # type: ignore
+            "owidDataset": {
+                "data": df.to_dict(orient="list"),
+                "metadata": metadata,
+            },
+            "dimensions": [d.to_dict() for d in self._get_dimensions()],  # type: ignore
             "chartTypes": [chart_type],
         }
 
@@ -456,50 +323,17 @@ class DataConfig:
             doc["minTime"] = self.min_time
         if self.max_time is not None:
             doc["maxTime"] = self.max_time
-
-        for var_id, var in self.dataset.variables.items():
-            ds[var_id] = {
-                "data": {
-                    "entities": var.entities,
-                    "years": var.years,
-                    "values": var.values,
-                },
-                "metadata": {
-                    "id": var_id,
-                    "name": var.name,
-                    "display": var.display,
-                    "dimensions": {
-                        "entities": {
-                            "values": [
-                                {"id": e.id, "name": e.name}
-                                for e in self.dataset.entity_key.values()
-                            ],
-                        },
-                        "years": {
-                            "values": [{"id": y} for y in sorted(set(var.years))]
-                        },
-                    },
-                },
-            }
+        if self.size_col is not None:
+            doc["sizeSlug"] = self.size_col
 
         return doc
 
 
-def _build_grapher_config(config: Dict[str, Any]) -> Dict[str, Any]:
+def _config_to_grapher(config: Dict[str, Any]) -> Dict[str, Any]:
     """Build GrapherState config from the export config."""
-    owid_dataset = config.get("owidDataset", {})
     dimensions = config.get("dimensions", [])
     chart_types = config.get("chartTypes", [])
     is_scatter = "ScatterPlot" in chart_types
-
-    # Build mapping of variable IDs to names
-    var_id_to_name = {}
-    for var_data in owid_dataset.values():
-        metadata = var_data.get("metadata", {})
-        var_id = metadata.get("id")
-        var_name = metadata.get("name", "")
-        if var_id and var_name:
-            var_id_to_name[var_id] = var_name
 
     grapher_config: Dict[str, Any] = {
         "hideLogo": config.get("hideLogo", True),
@@ -516,8 +350,7 @@ def _build_grapher_config(config: Dict[str, Any]) -> Dict[str, Any]:
         x_var_name = None
 
         for dim in dimensions:
-            var_id = dim.get("variableId")
-            var_name = var_id_to_name.get(var_id)
+            var_name = dim.get("variableName")
             if var_name:
                 if dim.get("property") == "y":
                     y_var_names.append(var_name)
@@ -529,14 +362,10 @@ def _build_grapher_config(config: Dict[str, Any]) -> Dict[str, Any]:
         if x_var_name:
             grapher_config["xSlug"] = x_var_name
     else:
-        # For non-scatter plots, just collect all variable names as ySlugs
-        y_slugs = []
-        for var_data in owid_dataset.values():
-            metadata = var_data.get("metadata", {})
-            var_name = metadata.get("name", "")
-            if var_name:
-                y_slugs.append(var_name)
-
+        # For non-scatter plots, collect variable names from dimensions as ySlugs
+        y_slugs = [
+            dim.get("variableName") for dim in dimensions if dim.get("variableName")
+        ]
         if y_slugs:
             grapher_config["ySlugs"] = " ".join(y_slugs)
 
@@ -552,6 +381,7 @@ def _build_grapher_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "minTime",
         "maxTime",
         "yAxis",
+        "sizeSlug",
     ]:
         if config.get(field_name):
             grapher_config[field_name] = config[field_name]
@@ -570,10 +400,8 @@ def generate_iframe(config: Dict[str, Any]) -> str:
     # Extract data for CSV and prepare config for GrapherState API
     csv_data = _config_to_csv(config)
 
-    print(csv_data)
-
     # Build grapher config from the config dict
-    grapher_config = _build_grapher_config(config)
+    grapher_config = _config_to_grapher(config)
 
     iframe_contents = f"""
 <!DOCTYPE html>
@@ -653,64 +481,16 @@ def generate_iframe(config: Dict[str, Any]) -> str:
 
 
 def _config_to_csv(config: Dict[str, Any]) -> str:
-    """Convert the old owidDataset format to CSV for OwidTable."""
+    """Convert the owidDataset format to CSV for OwidTable."""
     owid_dataset = config.get("owidDataset", {})
+    data = owid_dataset.get("data", {})
 
-    # Build entity name lookup from the first variable's metadata
-    entity_lookup: Dict[int, str] = {}
-    # Use dict to merge rows by (entity_id, year) key
-    rows_dict: Dict[Tuple[int, int], Dict[str, Any]] = {}
+    if not data:
+        return ""
 
-    for var_id, var_data in owid_dataset.items():
-        metadata = var_data.get("metadata", {})
-        var_name = metadata.get("name", f"var_{var_id}")
-
-        # Build entity lookup from dimensions
-        dims = metadata.get("dimensions", {})
-        entity_values = dims.get("entities", {}).get("values", [])
-        for e in entity_values:
-            entity_lookup[e["id"]] = e["name"]
-
-        # Extract data points
-        data = var_data.get("data", {})
-        entities = data.get("entities", [])
-        years = data.get("years", [])
-        values = data.get("values", [])
-
-        for entity_id, year, value in zip(entities, years, values):
-            entity_name = entity_lookup.get(entity_id, f"entity_{entity_id}")
-            key = (entity_id, year)
-
-            # Get or create row for this entity/year
-            if key not in rows_dict:
-                rows_dict[key] = {
-                    "entityName": entity_name,
-                    "entityId": entity_id,
-                    "year": year,
-                }
-
-            # Add this variable's value to the row
-            rows_dict[key][var_name] = value
-
-    if not rows_dict:
-        return "entityName,entityId,year,value\n"
-
-    # Convert dict to list of rows
-    rows = list(rows_dict.values())
-
-    # Get all unique column names (variable names)
-    all_columns = ["entityName", "entityId", "year"]
-    var_columns = set()
-    for row in rows:
-        var_columns.update(k for k in row.keys() if k not in all_columns)
-    all_columns.extend(sorted(var_columns))
-
-    # Build CSV
-    csv_lines = [",".join(all_columns)]
-    for row in rows:
-        csv_lines.append(",".join(str(row.get(col, "")) for col in all_columns))
-
-    return "\n".join(csv_lines)
+    # Convert dict of lists back to dataframe and then to CSV
+    df = pd.DataFrame(data)
+    return df.to_csv(index=False)
 
 
 def prune(d: Dict[str, Any]) -> Dict[str, Any]:

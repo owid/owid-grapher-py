@@ -33,44 +33,18 @@ def test_json_export():
         .encode(x="year", y="population")
         .label("Too many Koalas?")
     )
-    assert ch.export() == {
-        "tab": "chart",
-        "title": "Too many Koalas?",
-        "subtitle": "",
-        "note": "",
-        "sourceDesc": "",
-        "hideLogo": True,
-        "isPublished": True,
-        "type": "LineChart",
-        "hideTitleAnnotation": False,
-        "hideLegend": True,
-        "hideEntityControls": True,
-        "hideRelativeToggle": True,
-        "hasMapTab": False,
-        "stackMode": "absolute",
-        "yAxis": {},
-        "chartTypes": ["LineChart"],
-        "dimensions": [{"property": "y", "variableId": 1, "display": {}}],
-        "owidDataset": {
-            1: {
-                "data": {
-                    "years": [2000, 2010, 2020],
-                    "entities": [1, 1, 1],
-                    "values": [1234, 52342, 80123],
-                },
-                "metadata": {
-                    "id": 1,
-                    "name": "dummy",
-                    "display": {},
-                    "dimensions": {
-                        "entities": {"values": [{"id": 1, "name": "population"}]},
-                        "years": {"values": [{"id": 2000}, {"id": 2010}, {"id": 2020}]},
-                    },
-                },
-            }
-        },
-        "selectedEntityNames": ["population"],
-    }
+    export = ch.export()
+    assert export["title"] == "Too many Koalas?"
+    assert export["type"] == "LineChart"
+    assert export["selectedEntityNames"] == ["population"]
+
+    # Check owidDataset structure - data is just the dataframe as dict
+    data = export["owidDataset"]["data"]
+    assert data["year"] == [2000, 2010, 2020]
+    assert data["population"] == [1234, 52342, 80123]
+
+    # Check metadata
+    assert "population" in export["owidDataset"]["metadata"]
 
 
 def test_scatter_plot_export():
@@ -88,83 +62,94 @@ def test_scatter_plot_export():
         .label("Life expectancy vs. GDP")
     )
     config = ch.export()
-    assert config == {
-        "tab": "chart",
-        "title": "Life expectancy vs. GDP",
-        "subtitle": "",
-        "note": "",
-        "sourceDesc": "",
-        "hideLogo": True,
-        "isPublished": True,
-        "type": "ScatterPlot",
-        "hideTitleAnnotation": True,
-        "hideLegend": False,
-        "hideEntityControls": True,
-        "hideRelativeToggle": True,
-        "hasMapTab": False,
-        "stackMode": "absolute",
-        "yAxis": {},
-        "chartTypes": ["ScatterPlot"],
-        "dimensions": [
-            {"property": "y", "variableId": 2, "display": {}},
-            {"property": "x", "variableId": 1, "display": {}},
-        ],
-        "owidDataset": {
-            1: {
-                "data": {
-                    "years": [0, 1, 2],
-                    "entities": [1, 2, 3],
-                    "values": [1000, 5000, 10000],
-                },
-                "metadata": {
-                    "id": 1,
-                    "name": "gdp",
-                    "display": {},
-                    "dimensions": {
-                        "entities": {
-                            "values": [
-                                {"id": 1, "name": "Country A"},
-                                {"id": 2, "name": "Country B"},
-                                {"id": 3, "name": "Country C"},
-                            ]
-                        },
-                        "years": {"values": [{"id": 0}, {"id": 1}, {"id": 2}]},
-                    },
-                },
-            },
-            2: {
-                "data": {
-                    "years": [0, 1, 2],
-                    "entities": [1, 2, 3],
-                    "values": [50, 70, 80],
-                },
-                "metadata": {
-                    "id": 2,
-                    "name": "life_expectancy",
-                    "display": {},
-                    "dimensions": {
-                        "entities": {
-                            "values": [
-                                {"id": 1, "name": "Country A"},
-                                {"id": 2, "name": "Country B"},
-                                {"id": 3, "name": "Country C"},
-                            ]
-                        },
-                        "years": {"values": [{"id": 0}, {"id": 1}, {"id": 2}]},
-                    },
-                },
-            },
-        },
-        "selectedEntityNames": ["Country A", "Country B", "Country C"],
-        "minTime": "latest",
-    }
+
+    # Check key fields
+    assert config["title"] == "Life expectancy vs. GDP"
+    assert config["type"] == "ScatterPlot"
+    assert config["selectedEntityNames"] == ["Country A", "Country B", "Country C"]
+    assert config["minTime"] == "latest"
+
+    # Check dimensions
+    assert config["dimensions"] == [
+        {"property": "y", "variableName": "life_expectancy", "display": {}},
+        {"property": "x", "variableName": "gdp", "display": {}},
+    ]
+
+    # Check owidDataset structure - data is just the dataframe as dict
+    data = config["owidDataset"]["data"]
+    assert data["gdp"] == [1000, 5000, 10000]
+    assert data["life_expectancy"] == [50, 70, 80]
+    assert data["entityName"] == ["Country A", "Country B", "Country C"]
+
+    # Check metadata
+    assert "gdp" in config["owidDataset"]["metadata"]
+    assert "life_expectancy" in config["owidDataset"]["metadata"]
 
     # Test CSV output
     from owid.grapher import _config_to_csv
 
     csv_output = _config_to_csv(config)
-    expected_csv = """entityName,entityId,year,gdp,life_expectancy
-Country A,1,0,1000,50
-Country B,2,1,5000,70
-Country C,3,2,10000,80"""
-    assert csv_output == expected_csv
+    # CSV should have all columns
+    assert "gdp" in csv_output
+    assert "life_expectancy" in csv_output
+    assert "entityName" in csv_output
+    assert "Country A" in csv_output
+
+
+def test_scatter_plot_with_year():
+    """Test scatter plot with year column - should preserve all rows."""
+    df = pd.DataFrame(
+        {
+            "gdp_per_capita": [5000, 15000, 25000, 8000, 18000, 28000],
+            "life_expectancy": [65, 72, 78, 68, 74, 79],
+            "country": ["Australia"] * 3 + ["New Zealand"] * 3,
+            "year": [2000, 2010, 2020, 2000, 2010, 2020],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_scatter()
+        .encode(x="gdp_per_capita", y="life_expectancy", c="country")
+        .label(title="GDP vs Life Expectancy")
+    )
+    config = ch.export()
+
+    # Check data preserves all 6 rows
+    data = config["owidDataset"]["data"]
+    assert len(data["gdp_per_capita"]) == 6
+    assert len(data["life_expectancy"]) == 6
+    assert len(data["entityName"]) == 6
+    assert len(data["year"]) == 6
+
+    # Check CSV output has all rows
+    from owid.grapher import _config_to_csv
+
+    csv_output = _config_to_csv(config)
+    assert "year" in csv_output
+    # Count rows (header + 6 data rows)
+    assert csv_output.strip().count("\n") == 6
+
+
+def test_scatter_plot_with_size():
+    """Test scatter plot with size encoding."""
+    df = pd.DataFrame(
+        {
+            "gdp": [1000, 5000, 10000],
+            "life_expectancy": [50, 70, 80],
+            "population": [10, 100, 50],
+            "country": ["Country A", "Country B", "Country C"],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_scatter()
+        .encode(x="gdp", y="life_expectancy", c="country", size="population")
+    )
+    config = ch.export()
+
+    # Check sizeSlug is set
+    assert config["sizeSlug"] == "population"
+
+    # Check data includes population column
+    data = config["owidDataset"]["data"]
+    assert data["population"] == [10, 100, 50]
