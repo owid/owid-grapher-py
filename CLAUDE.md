@@ -86,7 +86,7 @@ The `Chart` class:
 
 The `generate_iframe()` function:
 1. Converts the internal config to CSV format via `_config_to_csv()`
-2. Extracts GrapherState options via `_extract_grapher_config()`
+2. Builds GrapherState options via `_build_grapher_config()`
 3. Creates an iframe that loads OWID's JS bundle from `expose-grapher-state.owid.pages.dev`
 4. Uses `OwidTable` to parse CSV and `GrapherState` + `Grapher` React component to render
 

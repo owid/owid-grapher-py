@@ -6,6 +6,8 @@
 
 import datetime as dt
 import json
+import random
+import string
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -128,7 +130,7 @@ class Chart:
         """Export the full config including data (for debugging)."""
         self.config.auto_improve()
         config = self.config.to_dict()  # type: ignore
-        config.update(self.data_config().to_dict())
+        config.update(self.data_config().to_dict(self.config.type))
         config = prune(config)
         return config
 
@@ -186,7 +188,7 @@ class Dimension:
     "dimensions": [{"property": "y", "variableId": 1}],
     """
 
-    property: Literal["y", "x"]
+    property: Literal["y", "x", "color"]
     variable_id: int
     display: Optional[dict] = field(default_factory=dict)
 
@@ -195,11 +197,47 @@ class Dimension:
         return Dimension(property="y", variable_id=1)
 
     @classmethod
-    def from_dataset(cls, dataset: "Dataset") -> List["Dimension"]:
-        return [
-            Dimension(property="y", variable_id=v.id)
-            for v in dataset.variables.values()
-        ]
+    def from_dataset(
+        cls,
+        dataset: "Dataset",
+        chart_type: ChartType = "LineChart",
+        x_col: Optional[str] = None,
+        y_col: Optional[str] = None,
+    ) -> List["Dimension"]:
+        if chart_type == "ScatterPlot":
+            # Scatter plots need x and y dimensions
+            # Find variables by name for correct mapping
+            y_var_id = None
+            x_var_id = None
+
+            for var_id, var in dataset.variables.items():
+                if y_col and var.name == y_col:
+                    y_var_id = var_id
+                if x_col and var.name == x_col:
+                    x_var_id = var_id
+
+            if y_var_id and x_var_id:
+                return [
+                    Dimension(property="y", variable_id=y_var_id),
+                    Dimension(property="x", variable_id=x_var_id),
+                ]
+            else:
+                # Fallback to old behavior if names not found
+                variables = list(dataset.variables.values())
+                if len(variables) >= 2:
+                    return [
+                        Dimension(property="y", variable_id=variables[0].id),
+                        Dimension(property="x", variable_id=variables[1].id),
+                    ]
+                else:
+                    return [
+                        Dimension(property="y", variable_id=v.id) for v in variables
+                    ]
+        else:
+            return [
+                Dimension(property="y", variable_id=v.id)
+                for v in dataset.variables.values()
+            ]
 
 
 @dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
@@ -260,7 +298,7 @@ class DataConfig:
     dataset: Dataset
     dimensions: List[Dimension]
     selected_entity_names: List[str]
-    min_time: Optional[int] = None
+    min_time: Optional[Any] = None  # Can be int, "latest", or None
     max_time: Optional[int] = None
 
     @classmethod
@@ -280,6 +318,8 @@ class DataConfig:
             df = cls._reshape_line_chart(df, x, y, c, time_type)
         elif chart_type in ("DiscreteBar", "StackedDiscreteBar"):
             df = cls._reshape_discrete_bar(df, x, y, c)
+        elif chart_type == "ScatterPlot":
+            df = cls._reshape_scatter_plot(df, x, y, c)
         else:
             raise ValueError(f"chart type {chart_type} is not yet implemented")
 
@@ -298,9 +338,13 @@ class DataConfig:
 
             min_time, max_time = timespan
 
+        # For scatter plots, use 'latest' by default
+        if chart_type == "ScatterPlot" and min_time is None:
+            min_time = "latest"  # type: ignore
+
         return DataConfig(
             dataset=dataset,
-            dimensions=Dimension.from_dataset(dataset),
+            dimensions=Dimension.from_dataset(dataset, chart_type, x_col=x, y_col=y),
             selected_entity_names=selection,
             min_time=min_time,
             max_time=max_time,
@@ -349,13 +393,69 @@ class DataConfig:
             }
         )
 
-    def to_dict(self) -> Dict[Any, Any]:
+    @staticmethod
+    def _reshape_scatter_plot(
+        df: pd.DataFrame, x: str, y: str, c: Optional[str] = None
+    ) -> pd.DataFrame:
+        """Reshape data for scatter plots.
+
+        For scatter plots, we need both x and y values in a single row per entity,
+        stored as separate variables (columns) in the normalized format.
+        Each observation gets a unique year (using row index) to prevent merging.
+        """
+        if c:
+            # c is the entity dimension
+            entity_col = c
+        else:
+            # No color dimension, create a single entity
+            df = df.copy()
+            df["__entity"] = "data"
+            entity_col = "__entity"
+
+        # Create normalized format with entity, year, and both x/y as separate columns
+        # Use row index as year to ensure each point is separate
+        result_rows = []
+
+        for idx, row in df.iterrows():
+            entity_name = row[entity_col]
+            # Use index as year to make each observation unique
+            year = idx if isinstance(idx, int) else 2021
+
+            # Create a row with x value
+            result_rows.append(
+                {
+                    "entity": entity_name,
+                    "year": year,
+                    "variable": x,
+                    "value": row[x],
+                }
+            )
+
+            # Create a row with y value
+            result_rows.append(
+                {
+                    "entity": entity_name,
+                    "year": year,
+                    "variable": y,
+                    "value": row[y],
+                }
+            )
+
+        return pd.DataFrame(result_rows)
+
+    def to_dict(self, chart_type: ChartType) -> Dict[Any, Any]:
         ds = {}
         doc = {
             "selectedEntityNames": self.selected_entity_names,
             "owidDataset": ds,
             "dimensions": [d.to_dict() for d in self.dimensions],  # type: ignore
+            "chartTypes": [chart_type],
         }
+
+        if self.min_time is not None:
+            doc["minTime"] = self.min_time
+        if self.max_time is not None:
+            doc["maxTime"] = self.max_time
 
         for var_id, var in self.dataset.variables.items():
             ds[var_id] = {
@@ -385,15 +485,95 @@ class DataConfig:
         return doc
 
 
-def generate_iframe(config: Dict[str, Any]) -> str:
-    import random
-    import string
+def _build_grapher_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Build GrapherState config from the export config."""
+    owid_dataset = config.get("owidDataset", {})
+    dimensions = config.get("dimensions", [])
+    chart_types = config.get("chartTypes", [])
+    is_scatter = "ScatterPlot" in chart_types
 
+    # Build mapping of variable IDs to names
+    var_id_to_name = {}
+    for var_data in owid_dataset.values():
+        metadata = var_data.get("metadata", {})
+        var_id = metadata.get("id")
+        var_name = metadata.get("name", "")
+        if var_id and var_name:
+            var_id_to_name[var_id] = var_name
+
+    grapher_config: Dict[str, Any] = {
+        "hideLogo": config.get("hideLogo", True),
+        "selectedEntityNames": config.get("selectedEntityNames", []),
+    }
+
+    # Use chartTypes directly from config
+    if config.get("chartTypes"):
+        grapher_config["chartTypes"] = config["chartTypes"]
+
+    # For scatter plots, separate x and y slugs
+    if is_scatter:
+        y_var_names = []
+        x_var_name = None
+
+        for dim in dimensions:
+            var_id = dim.get("variableId")
+            var_name = var_id_to_name.get(var_id)
+            if var_name:
+                if dim.get("property") == "y":
+                    y_var_names.append(var_name)
+                elif dim.get("property") == "x":
+                    x_var_name = var_name
+
+        if y_var_names:
+            grapher_config["ySlugs"] = " ".join(y_var_names)
+        if x_var_name:
+            grapher_config["xSlug"] = x_var_name
+    else:
+        # For non-scatter plots, just collect all variable names as ySlugs
+        y_slugs = []
+        for var_data in owid_dataset.values():
+            metadata = var_data.get("metadata", {})
+            var_name = metadata.get("name", "")
+            if var_name:
+                y_slugs.append(var_name)
+
+        if y_slugs:
+            grapher_config["ySlugs"] = " ".join(y_slugs)
+
+    # Pass through common fields
+    for field_name in [
+        "title",
+        "subtitle",
+        "note",
+        "sourceDesc",
+        "hasMapTab",
+        "tab",
+        "stackMode",
+        "minTime",
+        "maxTime",
+        "yAxis",
+    ]:
+        if config.get(field_name):
+            grapher_config[field_name] = config[field_name]
+
+    # Pass through hide toggles
+    for field_name in ["hideRelativeToggle", "hideEntityControls"]:
+        if field_name in config:
+            grapher_config[field_name] = config[field_name]
+
+    return grapher_config
+
+
+def generate_iframe(config: Dict[str, Any]) -> str:
     iframe_name = "".join(random.choice(string.ascii_lowercase) for _ in range(20))
 
-    # Extract data and config for the new GrapherState API
+    # Extract data for CSV and prepare config for GrapherState API
     csv_data = _config_to_csv(config)
-    grapher_config = _extract_grapher_config(config)
+
+    print(csv_data)
+
+    # Build grapher config from the config dict
+    grapher_config = _build_grapher_config(config)
 
     iframe_contents = f"""
 <!DOCTYPE html>
@@ -478,7 +658,8 @@ def _config_to_csv(config: Dict[str, Any]) -> str:
 
     # Build entity name lookup from the first variable's metadata
     entity_lookup: Dict[int, str] = {}
-    rows = []
+    # Use dict to merge rows by (entity_id, year) key
+    rows_dict: Dict[Tuple[int, int], Dict[str, Any]] = {}
 
     for var_id, var_data in owid_dataset.items():
         metadata = var_data.get("metadata", {})
@@ -498,17 +679,24 @@ def _config_to_csv(config: Dict[str, Any]) -> str:
 
         for entity_id, year, value in zip(entities, years, values):
             entity_name = entity_lookup.get(entity_id, f"entity_{entity_id}")
-            rows.append(
-                {
+            key = (entity_id, year)
+
+            # Get or create row for this entity/year
+            if key not in rows_dict:
+                rows_dict[key] = {
                     "entityName": entity_name,
                     "entityId": entity_id,
                     "year": year,
-                    var_name: value,
                 }
-            )
 
-    if not rows:
+            # Add this variable's value to the row
+            rows_dict[key][var_name] = value
+
+    if not rows_dict:
         return "entityName,entityId,year,value\n"
+
+    # Convert dict to list of rows
+    rows = list(rows_dict.values())
 
     # Get all unique column names (variable names)
     all_columns = ["entityName", "entityId", "year"]
@@ -523,64 +711,6 @@ def _config_to_csv(config: Dict[str, Any]) -> str:
         csv_lines.append(",".join(str(row.get(col, "")) for col in all_columns))
 
     return "\n".join(csv_lines)
-
-
-def _extract_grapher_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract GrapherState config from the old format."""
-    owid_dataset = config.get("owidDataset", {})
-
-    # Get variable names for ySlugs
-    y_slugs = []
-    for var_data in owid_dataset.values():
-        metadata = var_data.get("metadata", {})
-        var_name = metadata.get("name", "")
-        if var_name:
-            y_slugs.append(var_name)
-
-    # Map old chart type to new chartTypes array
-    chart_type = config.get("type", "LineChart")
-
-    grapher_config: Dict[str, Any] = {
-        "chartTypes": [chart_type],
-        "hideLogo": config.get("hideLogo", True),
-        "selectedEntityNames": config.get("selectedEntityNames", []),
-    }
-
-    if y_slugs:
-        grapher_config["ySlugs"] = " ".join(y_slugs)
-
-    if config.get("title"):
-        grapher_config["title"] = config["title"]
-
-    if config.get("subtitle"):
-        grapher_config["subtitle"] = config["subtitle"]
-
-    if config.get("note"):
-        grapher_config["note"] = config["note"]
-
-    if config.get("sourceDesc"):
-        grapher_config["sourceDesc"] = config["sourceDesc"]
-
-    if config.get("hasMapTab"):
-        grapher_config["hasMapTab"] = config["hasMapTab"]
-
-    if config.get("tab"):
-        grapher_config["tab"] = config["tab"]
-
-    if config.get("stackMode"):
-        grapher_config["stackMode"] = config["stackMode"]
-
-    # Pass through hide toggles (False means show the control)
-    if "hideRelativeToggle" in config:
-        grapher_config["hideRelativeToggle"] = config["hideRelativeToggle"]
-
-    if "hideEntityControls" in config:
-        grapher_config["hideEntityControls"] = config["hideEntityControls"]
-
-    if config.get("yAxis"):
-        grapher_config["yAxis"] = config["yAxis"]
-
-    return grapher_config
 
 
 def prune(d: Dict[str, Any]) -> Dict[str, Any]:

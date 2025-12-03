@@ -49,6 +49,7 @@ def test_json_export():
         "hasMapTab": False,
         "stackMode": "absolute",
         "yAxis": {},
+        "chartTypes": ["LineChart"],
         "dimensions": [{"property": "y", "variableId": 1, "display": {}}],
         "owidDataset": {
             1: {
@@ -70,3 +71,100 @@ def test_json_export():
         },
         "selectedEntityNames": ["population"],
     }
+
+
+def test_scatter_plot_export():
+    df = pd.DataFrame(
+        {
+            "gdp": [1000, 5000, 10000],
+            "life_expectancy": [50, 70, 80],
+            "country": ["Country A", "Country B", "Country C"],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_scatter()
+        .encode(x="gdp", y="life_expectancy", c="country")
+        .label("Life expectancy vs. GDP")
+    )
+    config = ch.export()
+    assert config == {
+        "tab": "chart",
+        "title": "Life expectancy vs. GDP",
+        "subtitle": "",
+        "note": "",
+        "sourceDesc": "",
+        "hideLogo": True,
+        "isPublished": True,
+        "type": "ScatterPlot",
+        "hideTitleAnnotation": True,
+        "hideLegend": False,
+        "hideEntityControls": True,
+        "hideRelativeToggle": True,
+        "hasMapTab": False,
+        "stackMode": "absolute",
+        "yAxis": {},
+        "chartTypes": ["ScatterPlot"],
+        "dimensions": [
+            {"property": "y", "variableId": 2, "display": {}},
+            {"property": "x", "variableId": 1, "display": {}},
+        ],
+        "owidDataset": {
+            1: {
+                "data": {
+                    "years": [0, 1, 2],
+                    "entities": [1, 2, 3],
+                    "values": [1000, 5000, 10000],
+                },
+                "metadata": {
+                    "id": 1,
+                    "name": "gdp",
+                    "display": {},
+                    "dimensions": {
+                        "entities": {
+                            "values": [
+                                {"id": 1, "name": "Country A"},
+                                {"id": 2, "name": "Country B"},
+                                {"id": 3, "name": "Country C"},
+                            ]
+                        },
+                        "years": {"values": [{"id": 0}, {"id": 1}, {"id": 2}]},
+                    },
+                },
+            },
+            2: {
+                "data": {
+                    "years": [0, 1, 2],
+                    "entities": [1, 2, 3],
+                    "values": [50, 70, 80],
+                },
+                "metadata": {
+                    "id": 2,
+                    "name": "life_expectancy",
+                    "display": {},
+                    "dimensions": {
+                        "entities": {
+                            "values": [
+                                {"id": 1, "name": "Country A"},
+                                {"id": 2, "name": "Country B"},
+                                {"id": 3, "name": "Country C"},
+                            ]
+                        },
+                        "years": {"values": [{"id": 0}, {"id": 1}, {"id": 2}]},
+                    },
+                },
+            },
+        },
+        "selectedEntityNames": ["Country A", "Country B", "Country C"],
+        "minTime": "latest",
+    }
+
+    # Test CSV output
+    from owid.grapher import _config_to_csv
+
+    csv_output = _config_to_csv(config)
+    expected_csv = """entityName,entityId,year,gdp,life_expectancy
+Country A,1,0,1000,50
+Country B,2,1,5000,70
+Country C,3,2,10000,80"""
+    assert csv_output == expected_csv
