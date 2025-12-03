@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Custom instructions
+
+- Don't run `make test` unless explicitly told to (but always run it before committing).
+
 ## Project Overview
 
 **owid-grapher-py** is a Python package for creating OWID (Our World in Data) charts in Jupyter notebooks. It provides a declarative API similar to Altair for building interactive charts that render using OWID's grapher JS library.
@@ -73,7 +77,7 @@ The project uses a **namespace package** structure under `owid/`:
 Charts are built using a fluent/method-chaining API:
 
 ```python
-Chart(df).mark_line().encode(x='year', y='population', c='country')
+Chart(df).mark_line().encode(x='year', y='population', entity='country')
 ```
 
 The `Chart` class:

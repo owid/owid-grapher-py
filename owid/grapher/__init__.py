@@ -29,7 +29,8 @@ class Chart:
         self.config = ChartConfig()
         self.x: Optional[str] = None
         self.y: Optional[str] = None
-        self.c: Optional[str] = None
+        self.entity: Optional[str] = None
+        self.color: Optional[str] = None
         self.size: Optional[str] = None
         self.time_type = TimeType.YEAR
         self.selection: Optional[List[str]] = None
@@ -39,23 +40,25 @@ class Chart:
         self,
         x: Optional[str] = None,
         y: Optional[str] = None,
-        c: Optional[str] = None,
+        entity: Optional[str] = None,
+        color: Optional[str] = None,
         size: Optional[str] = None,
     ) -> "Chart":
         self.x = x
         self.y = y
-        self.c = c
+        self.entity = entity
+        self.color = color
         self.size = size
 
         # fail early if there's been a typo
-        for col in [x, y, c, size]:
+        for col in [x, y, entity, color, size]:
             if col and col not in self.data.columns:
                 raise ValueError(f"no such column: {col}")
 
         if x == "date":
             self.time_type = TimeType.DAY
 
-        self.config.hide_legend = not c
+        self.config.hide_legend = not entity
 
         return self
 
@@ -66,6 +69,15 @@ class Chart:
         self.config.subtitle = subtitle
         self.config.source_desc = source_desc
         self.config.note = note
+        return self
+
+    def axis(
+        self, x_label: Optional[str] = None, y_label: Optional[str] = None
+    ) -> "Chart":
+        if x_label is not None:
+            self.config.x_axis["label"] = x_label
+        if y_label is not None:
+            self.config.y_axis["label"] = y_label
         return self
 
     def mark_scatter(self) -> "Chart":
@@ -147,7 +159,8 @@ class Chart:
             self.data,
             x=self.x,
             y=self.y,
-            c=self.c,
+            entity=self.entity,
+            color=self.color,
             size=self.size,
             time_type=self.time_type,
             chart_type=self.config.type,
@@ -181,6 +194,7 @@ class ChartConfig:
     hide_relative_toggle: bool = True
     has_map_tab: bool = False
     stack_mode: Literal["relative", "absolute"] = "absolute"
+    x_axis: dict = field(default_factory=dict)
     y_axis: dict = field(default_factory=dict)
 
     def auto_improve(self):
@@ -207,8 +221,9 @@ class DataConfig:
     df: pd.DataFrame
     x_col: str  # Time column (or x-axis for scatter)
     y_cols: List[str]  # Value column(s)
-    entity_col: Optional[str]  # Entity/color column
+    entity_col: Optional[str]  # Entity/grouping column
     year_col: Optional[str]  # Year column (for scatter plots with time)
+    color_col: Optional[str]  # Color column (for scatter plots, maps to colorSlug)
     size_col: Optional[str]  # Size column (for scatter plots)
     time_type: TimeType
     chart_type: ChartType
@@ -222,7 +237,8 @@ class DataConfig:
         df: pd.DataFrame,
         x: str,
         y: str,
-        c: Optional[str] = None,
+        entity: Optional[str] = None,
+        color: Optional[str] = None,
         size: Optional[str] = None,
         time_type: "TimeType" = TimeType.YEAR,
         chart_type: ChartType = "LineChart",
@@ -232,14 +248,17 @@ class DataConfig:
         df = df.copy()
 
         year_col: Optional[str] = None
+        color_col: Optional[str] = None
 
         # Determine entity column and selection
         if chart_type == "ScatterPlot":
-            # For scatter: x and y are both value columns, c is entity
-            entity_col = c
+            # For scatter: x and y are both value columns, entity is grouping
+            entity_col = entity
             y_cols = [x, y]  # Both are "value" columns for scatter
+            color_col = color  # Optional color encoding for scatter
+            # Don't auto-select all entities for scatter plots - let grapher handle it
             if selection is None:
-                selection = list(df[c].unique()) if c else ["data"]
+                selection = []
             # Check if dataframe has a year column
             if "year" in df.columns:
                 year_col = "year"
@@ -250,12 +269,12 @@ class DataConfig:
             if selection is None:
                 selection = list(df[y].unique())
         else:
-            # For line charts: x is time, y is value, c is entity
-            entity_col = c
+            # For line charts: x is time, y is value, entity is grouping
+            entity_col = entity
             y_cols = [y]
             if selection is None:
-                if c:
-                    selection = list(df[c].unique())
+                if entity:
+                    selection = list(df[entity].unique())
                 else:
                     selection = [y]  # Use column name as entity
 
@@ -276,6 +295,7 @@ class DataConfig:
             y_cols=y_cols,
             entity_col=entity_col,
             year_col=year_col,
+            color_col=color_col,
             size_col=size,
             time_type=time_type,
             chart_type=chart_type,
@@ -325,6 +345,8 @@ class DataConfig:
             doc["maxTime"] = self.max_time
         if self.size_col is not None:
             doc["sizeSlug"] = self.size_col
+        if self.color_col is not None:
+            doc["colorSlug"] = self.color_col
 
         return doc
 
@@ -380,8 +402,10 @@ def _config_to_grapher(config: Dict[str, Any]) -> Dict[str, Any]:
         "stackMode",
         "minTime",
         "maxTime",
+        "xAxis",
         "yAxis",
         "sizeSlug",
+        "colorSlug",
     ]:
         if config.get(field_name):
             grapher_config[field_name] = config[field_name]
