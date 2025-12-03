@@ -89,17 +89,17 @@ def _gen_encoding(config: dict, data: pd.DataFrame) -> str:
     else:
         x = "year"
 
-    c: Optional[str] = None
+    entity: Optional[str] = None
     if len(config["dimensions"]) > 1:
-        c = "variable"
+        entity = "variable"
     elif len(config.get("selectedData", [])) > 1:
-        c = "entity"
+        entity = "entity"
     elif len(config.get("selectedEntityNames", [])) > 1:
-        c = "entity"
+        entity = "entity"
 
     parts = [f'x="{x}"', 'y="value"']
-    if c:
-        parts.append(f'c="{c}"')
+    if entity:
+        parts.append(f'entity="{entity}"')
     encoding = ",\n    ".join(parts)
 
     return f".encode(\n    {encoding}\n)"

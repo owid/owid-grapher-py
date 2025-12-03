@@ -58,7 +58,7 @@ def test_scatter_plot_export():
     ch = (
         gr.Chart(df)
         .mark_scatter()
-        .encode(x="gdp", y="life_expectancy", c="country")
+        .encode(x="gdp", y="life_expectancy", entity="country")
         .label("Life expectancy vs. GDP")
     )
     config = ch.export()
@@ -66,7 +66,7 @@ def test_scatter_plot_export():
     # Check key fields
     assert config["title"] == "Life expectancy vs. GDP"
     assert config["type"] == "ScatterPlot"
-    assert config["selectedEntityNames"] == ["Country A", "Country B", "Country C"]
+    assert config["selectedEntityNames"] == []  # Scatter plots don't auto-select
     assert config["minTime"] == "latest"
 
     # Check dimensions
@@ -109,7 +109,7 @@ def test_scatter_plot_with_year():
     ch = (
         gr.Chart(df)
         .mark_scatter()
-        .encode(x="gdp_per_capita", y="life_expectancy", c="country")
+        .encode(x="gdp_per_capita", y="life_expectancy", entity="country")
         .label(title="GDP vs Life Expectancy")
     )
     config = ch.export()
@@ -143,7 +143,7 @@ def test_scatter_plot_with_size():
     ch = (
         gr.Chart(df)
         .mark_scatter()
-        .encode(x="gdp", y="life_expectancy", c="country", size="population")
+        .encode(x="gdp", y="life_expectancy", entity="country", size="population")
     )
     config = ch.export()
 
@@ -153,3 +153,24 @@ def test_scatter_plot_with_size():
     # Check data includes population column
     data = config["owidDataset"]["data"]
     assert data["population"] == [10, 100, 50]
+
+
+def test_axis_labels():
+    """Test axis label configuration."""
+    df = pd.DataFrame(
+        {
+            "gdp": [1000, 5000, 10000],
+            "life_expectancy": [50, 70, 80],
+            "country": ["Country A", "Country B", "Country C"],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_scatter()
+        .encode(x="gdp", y="life_expectancy", entity="country")
+        .axis(x_label="GDP per capita ($)", y_label="Life expectancy (years)")
+    )
+    config = ch.export()
+
+    assert config["xAxis"] == {"label": "GDP per capita ($)"}
+    assert config["yAxis"] == {"label": "Life expectancy (years)"}

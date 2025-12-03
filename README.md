@@ -40,7 +40,7 @@ df = pd.DataFrame({
 Chart(df).mark_line().encode(
     x='year',
     y='population',
-    c='country'
+    entity='country'
 ).label(title='Population Over Time')
 ```
 
@@ -52,7 +52,7 @@ Chart(df).mark_line().encode(
 Chart(df).mark_line().encode(
     x='year',
     y='population',
-    c='country'  # color by country
+    entity='country'  # group by country
 ).label(title='Population by Country')
 ```
 
@@ -69,7 +69,7 @@ Chart(df_2020).mark_bar().encode(
 Chart(df).mark_bar(stacked=True).encode(
     x='energy_generated',
     y='country',
-    c='energy_source'
+    entity='energy_source'
 )
 ```
 
@@ -82,12 +82,20 @@ Chart(df).mark_scatter().encode(
     y='life_expectancy'
 ).label(title='GDP vs Life Expectancy')
 
-# Scatter plot with color grouping
+# Scatter plot with entity grouping
 Chart(df).mark_scatter().encode(
     x='gdp_per_capita',
     y='life_expectancy',
-    c='country'  # color by country
+    entity='country'  # group by country
 ).label(title='GDP vs Life Expectancy by Country')
+
+# Scatter plot with color encoding (separate from entity)
+Chart(df).mark_scatter().encode(
+    x='gdp_per_capita',
+    y='life_expectancy',
+    entity='country',
+    color='continent'  # color by a different variable
+).label(title='GDP vs Life Expectancy')
 ```
 
 ### Map View
@@ -97,7 +105,7 @@ Chart(df).mark_scatter().encode(
 Chart(df).mark_line().encode(
     x='year',
     y='population',
-    c='country'
+    entity='country'
 ).interact(enable_map=True)
 ```
 
@@ -107,7 +115,7 @@ Chart(df).mark_line().encode(
 Chart(df).mark_line().encode(
     x='year',
     y='population',
-    c='country'
+    entity='country'
 ).label(
     title='Population Trends',
     subtitle='Select countries to compare',
@@ -133,7 +141,7 @@ Chart(...).interact(enable_map=True)
 
 # Combine multiple options
 Chart(df).mark_line().encode(
-    x='year', y='population', c='country'
+    x='year', y='population', entity='country'
 ).interact(
     allow_relative=True,
     entity_control=True,
@@ -146,7 +154,7 @@ Chart(df).mark_line().encode(
 ```python
 # Select specific entities and time range
 Chart(df).mark_line().encode(
-    x='year', y='population', c='country'
+    x='year', y='population', entity='country'
 ).select(
     entities=['Australia', 'Japan'],
     timespan=(2000, 2015)
@@ -165,7 +173,7 @@ Chart(...).transform(relative=True)
 View the underlying JSON configuration:
 
 ```python
-chart = Chart(df).mark_line().encode(x='year', y='population', c='country')
+chart = Chart(df).mark_line().encode(x='year', y='population', entity='country')
 chart.export()  # Returns the grapher config dict
 ```
 
