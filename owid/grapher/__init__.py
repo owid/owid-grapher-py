@@ -20,8 +20,14 @@ DATE_DISPLAY = {"yearIsDay": True, "zeroDay": "1970-01-01"}
 
 
 class Chart:
-    """
-    Chart(df, title='Hello').mark_line().encode(x='dog', y='sheep')
+    """Create interactive OWID charts from pandas DataFrames.
+
+    Args:
+        data: A pandas DataFrame containing the data to visualize.
+
+    Example:
+        >>> df = pd.DataFrame({'year': [2020, 2021], 'value': [100, 110]})
+        >>> Chart(df).mark_line().encode(x='year', y='value')
     """
 
     def __init__(self, data: pd.DataFrame):
@@ -46,6 +52,18 @@ class Chart:
         color: Optional[str] = None,
         size: Optional[str] = None,
     ) -> "Chart":
+        """Map DataFrame columns to visual properties.
+
+        Args:
+            x: Column name for x-axis (usually time or numeric values).
+            y: Column name for y-axis (values to plot).
+            entity: Column name for grouping data (e.g., countries).
+            color: Column name for color encoding (scatter plots only).
+            size: Column name for size encoding (scatter plots only).
+
+        Returns:
+            Self for method chaining.
+        """
         self.x = x
         self.y = y
         self.entity = entity
@@ -67,6 +85,17 @@ class Chart:
     def label(
         self, title: str = "", subtitle: str = "", source_desc: str = "", note: str = ""
     ) -> "Chart":
+        """Add labels and text to the chart.
+
+        Args:
+            title: Chart title.
+            subtitle: Chart subtitle.
+            source_desc: Data source attribution.
+            note: Additional notes or footnotes.
+
+        Returns:
+            Self for method chaining.
+        """
         self.config.title = title
         self.config.subtitle = subtitle
         self.config.source_desc = source_desc
@@ -80,6 +109,17 @@ class Chart:
         scale: Optional[Literal["linear", "log"]] = None,
         scale_control: Optional[bool] = None,
     ) -> "Chart":
+        """Configure the x-axis.
+
+        Args:
+            label: Axis label text.
+            unit: Unit of measurement (e.g., '$', 'kg').
+            scale: Scale type ('linear' or 'log').
+            scale_control: Allow users to toggle scale.
+
+        Returns:
+            Self for method chaining.
+        """
         if label is not None:
             self.config.x_axis["label"] = label
         if unit is not None:
@@ -97,6 +137,17 @@ class Chart:
         scale: Optional[Literal["linear", "log"]] = None,
         scale_control: Optional[bool] = None,
     ) -> "Chart":
+        """Configure the y-axis.
+
+        Args:
+            label: Axis label text.
+            unit: Unit of measurement (e.g., '$', 'kg').
+            scale: Scale type ('linear' or 'log').
+            scale_control: Allow users to toggle scale.
+
+        Returns:
+            Self for method chaining.
+        """
         if label is not None:
             self.config.y_axis["label"] = label
         if unit is not None:
@@ -138,14 +189,21 @@ class Chart:
         return self
 
     def mark_scatter(self) -> "Chart":
+        """Create a scatter plot."""
         self.config.type = "ScatterPlot"
         return self
 
     def mark_line(self) -> "Chart":
+        """Create a line chart."""
         self.config.type = "LineChart"
         return self
 
-    def mark_bar(self, stacked=False) -> "Chart":
+    def mark_bar(self, stacked: bool = False) -> "Chart":
+        """Create a bar chart.
+
+        Args:
+            stacked: If True, creates a stacked bar chart.
+        """
         if stacked:
             self.config.type = "StackedDiscreteBar"
         else:
@@ -159,6 +217,17 @@ class Chart:
         entity_control: Optional[bool] = None,
         enable_map: Optional[bool] = None,
     ) -> "Chart":
+        """Add interactive controls to the chart.
+
+        Args:
+            allow_relative: Show relative/absolute toggle.
+            scale_control: Show log/linear scale toggle.
+            entity_control: Show entity/country picker.
+            enable_map: Enable map visualization tab.
+
+        Returns:
+            Self for method chaining.
+        """
         if allow_relative is not None:
             self.config.hide_relative_toggle = False
 
@@ -181,6 +250,15 @@ class Chart:
         entities: Optional[List[str]] = None,
         timespan: Optional[Tuple[Any, Any]] = None,
     ) -> "Chart":
+        """Pre-select entities and time range.
+
+        Args:
+            entities: List of entity names to display.
+            timespan: Tuple of (start, end) for time range.
+
+        Returns:
+            Self for method chaining.
+        """
         if entities:
             self.selection = entities
 
@@ -192,11 +270,20 @@ class Chart:
         return self
 
     def transform(self, relative: bool) -> "Chart":
+        """Transform data to relative or absolute values.
+
+        Args:
+            relative: If True, show as percentage change from baseline.
+        """
         self.config.stack_mode = "relative" if relative else "absolute"
         return self
 
     def filter(self, matching_entities_only: bool = True) -> "Chart":
-        """Filter data to only show entities that have data for all dimensions."""
+        """Filter entities to only show those with complete data.
+
+        Args:
+            matching_entities_only: Only show entities with data for all dimensions.
+        """
         self.config.matching_entities_only = matching_entities_only
         return self
 
@@ -205,8 +292,15 @@ class Chart:
         html = generate_iframe(full_config)
         return html
 
-    def export(self, include_data=True) -> Dict[str, Any]:
-        """Export the full config including data (for debugging)."""
+    def export(self, include_data: bool = True) -> Dict[str, Any]:
+        """Export the chart configuration as a dictionary.
+
+        Args:
+            include_data: If True, includes the data in the export.
+
+        Returns:
+            Dictionary containing the full chart configuration.
+        """
         self.config.auto_improve()
         config = self.config.to_dict()  # type: ignore
         config.update(self.data_config().to_dict(self.config.type))

@@ -25,7 +25,18 @@ EPOCH_DATE = "2020-01-21"
 
 
 def get_chart_config(url: str, force: bool = False) -> dict:
-    "Get the internal OWID chart config for a chart URL."
+    """Get the internal OWID chart config from a chart URL.
+
+    Args:
+        url: Full URL to an OWID chart page.
+        force: Skip URL validation if True.
+
+    Returns:
+        Dictionary containing the chart configuration.
+
+    Raises:
+        Exception: If URL is invalid or request fails.
+    """
     if not url.startswith(GRAPHER_PREFIX) and not force:
         raise Exception(f"not an OWID chart url: {url}")
 
@@ -43,7 +54,22 @@ def get_chart_config(url: str, force: bool = False) -> dict:
 def get_chart_data(
     url: Optional[str] = None, slug: Optional[str] = None
 ) -> pd.DataFrame:
-    "Fetch the data from an OWID chart page as a data frame."
+    """Fetch data from an OWID chart as a DataFrame.
+
+    Args:
+        url: Full URL to an OWID chart (e.g., 'https://ourworldindata.org/grapher/life-expectancy').
+        slug: Chart slug as alternative to URL (e.g., 'life-expectancy').
+
+    Returns:
+        DataFrame with chart data in long format.
+
+    Raises:
+        ValueError: If neither url nor slug is provided.
+
+    Example:
+        >>> df = get_chart_data(slug='life-expectancy')
+        >>> df = get_chart_data(url='https://ourworldindata.org/grapher/co2-emissions')
+    """
     if not url and not slug:
         raise ValueError("must provide an url or a slug")
 
@@ -55,6 +81,14 @@ def get_chart_data(
 
 
 def owid_data_to_frame(owid_data: dict) -> pd.DataFrame:
+    """Convert OWID's internal data format to a pandas DataFrame.
+
+    Args:
+        owid_data: Dictionary with OWID variable data.
+
+    Returns:
+        DataFrame in long format with columns: year/date, entity, variable, value.
+    """
     frames = []
     for variable in owid_data.values():
         # fetch metadata to get entity mapping
@@ -83,6 +117,14 @@ def owid_data_to_frame(owid_data: dict) -> pd.DataFrame:
 
 
 def get_owid_data(config: dict) -> dict:
+    """Fetch raw variable data from OWID's API.
+
+    Args:
+        config: Chart configuration dictionary from get_chart_config().
+
+    Returns:
+        Dictionary with variable data for all variables in the chart.
+    """
     variable_ids = [dim["variableId"] for dim in config["dimensions"]]
     owid_data = {}
     for variable_id in variable_ids:
