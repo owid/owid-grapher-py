@@ -3,12 +3,19 @@ name = "owid-grapher-py"
 version = "0.2.2"
 description = "OWID charts for rendering in Jupyter notebooks."
 readme = "README.md"
-license = {text = "MIT"}
+license = { text = "MIT" }
 authors = [
-    {name = "Lars Yencken", email = "lars@yencken.org"},
-    {name = "Mojmir Vinkler", email = "mojmir@ourworldindata.org"}
+    { name = "Lars Yencken", email = "lars@yencken.org" },
+    { name = "Mojmir Vinkler", email = "mojmir@ourworldindata.org" },
 ]
-keywords = ["owid", "data-visualization", "jupyter", "charts", "graphs", "ourworldindata"]
+keywords = [
+    "owid",
+    "data-visualization",
+    "jupyter",
+    "charts",
+    "graphs",
+    "ourworldindata",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -49,6 +56,8 @@ dev-dependencies = [
     "ruff>=0.0.278",
     "pyright>=1.1.317",
     "ipykernel>=6.31.0",
+    "zensical>=0.0.11",
+    "mkdocstrings[python]>=0.24.0",
 ]
 
 [tool.ruff]
