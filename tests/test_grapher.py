@@ -4,6 +4,8 @@
 #  notebooks
 #
 
+import json
+
 import pandas as pd
 
 import owid.grapher as gr
@@ -231,7 +233,6 @@ def test_column_defs_generation():
         }
     }
 
-    import json
     column_defs_str = gr._build_column_defs(config)
     column_defs = json.loads(column_defs_str)
 

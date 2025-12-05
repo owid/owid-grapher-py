@@ -441,10 +441,7 @@ def _build_column_defs(config: Dict[str, Any]) -> str:
 
     column_defs = []
     for col_name, col_metadata in metadata.items():
-        col_def = {
-            "slug": col_name,
-            "type": "Numeric"
-        }
+        col_def = {"slug": col_name, "type": "Numeric"}
 
         # Extract display settings if present
         display = col_metadata.get("display", {})
@@ -517,7 +514,11 @@ def _config_to_grapher(config: Dict[str, Any]) -> Dict[str, Any]:
             grapher_config[field_name] = config[field_name]
 
     # Pass through hide toggles and boolean flags
-    for field_name in ["hideRelativeToggle", "hideEntityControls", "matchingEntitiesOnly"]:
+    for field_name in [
+        "hideRelativeToggle",
+        "hideEntityControls",
+        "matchingEntitiesOnly",
+    ]:
         if field_name in config:
             grapher_config[field_name] = config[field_name]
 

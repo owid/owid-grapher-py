@@ -3,4 +3,5 @@ dist
 .pytest_cache
 __pycache__
 .ipynb_checkpoints
-*.ipynb
+playground/*.ipynb
+ai/*.ipynb
