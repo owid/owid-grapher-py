@@ -35,6 +35,8 @@ class Chart:
         self.time_type = TimeType.YEAR
         self.selection: Optional[List[str]] = None
         self.timespan: Optional[Tuple[Any, Any]] = None
+        self.x_unit: Optional[str] = None
+        self.y_unit: Optional[str] = None
 
     def encode(
         self,
@@ -72,12 +74,20 @@ class Chart:
         return self
 
     def axis(
-        self, x_label: Optional[str] = None, y_label: Optional[str] = None
+        self,
+        x_label: Optional[str] = None,
+        y_label: Optional[str] = None,
+        x_unit: Optional[str] = None,
+        y_unit: Optional[str] = None,
     ) -> "Chart":
         if x_label is not None:
             self.config.x_axis["label"] = x_label
         if y_label is not None:
             self.config.y_axis["label"] = y_label
+        if x_unit is not None:
+            self.x_unit = x_unit
+        if y_unit is not None:
+            self.y_unit = y_unit
         return self
 
     def mark_scatter(self) -> "Chart":
@@ -144,12 +154,14 @@ class Chart:
         html = generate_iframe(full_config)
         return html
 
-    def export(self) -> Dict[str, Any]:
+    def export(self, include_data=True) -> Dict[str, Any]:
         """Export the full config including data (for debugging)."""
         self.config.auto_improve()
         config = self.config.to_dict()  # type: ignore
         config.update(self.data_config().to_dict(self.config.type))
         config = prune(config)
+        if not include_data:
+            del config["owidDataset"]["data"]
         return config
 
     def data_config(self) -> "DataConfig":
@@ -166,6 +178,8 @@ class Chart:
             chart_type=self.config.type,
             selection=self.selection,
             timespan=self.timespan,
+            x_unit=self.x_unit,
+            y_unit=self.y_unit,
         )
 
 
@@ -230,6 +244,8 @@ class DataConfig:
     selected_entity_names: List[str]
     min_time: Optional[Any] = None
     max_time: Optional[int] = None
+    x_unit: Optional[str] = None  # Unit for x-axis variable
+    y_unit: Optional[str] = None  # Unit for y-axis variable
 
     @classmethod
     def from_data(
@@ -244,6 +260,8 @@ class DataConfig:
         chart_type: ChartType = "LineChart",
         selection: Optional[List[str]] = None,
         timespan: Optional[Tuple[Any, Any]] = None,
+        x_unit: Optional[str] = None,
+        y_unit: Optional[str] = None,
     ) -> "DataConfig":
         df = df.copy()
 
@@ -302,6 +320,8 @@ class DataConfig:
             selected_entity_names=selection,
             min_time=min_time,
             max_time=max_time,
+            x_unit=x_unit,
+            y_unit=y_unit,
         )
 
     def _get_dimensions(self) -> List[Dimension]:
@@ -322,7 +342,18 @@ class DataConfig:
         # Build metadata for columns
         metadata: Dict[str, Any] = {}
         for col in self.y_cols:
-            metadata[col] = {"display": display}
+            col_display = display.copy()
+            # For scatter plots: y_cols[0] is x-axis, y_cols[1] is y-axis
+            if chart_type == "ScatterPlot":
+                if col == self.y_cols[0] and self.x_unit:
+                    col_display["unit"] = self.x_unit
+                elif col == self.y_cols[1] and self.y_unit:
+                    col_display["unit"] = self.y_unit
+            else:
+                # For other charts, apply y_unit to all y columns
+                if self.y_unit:
+                    col_display["unit"] = self.y_unit
+            metadata[col] = {"display": col_display} if col_display else {"display": {}}
 
         # Rename entity column to entityName for OwidTable
         df = self.df.copy()
@@ -349,6 +380,29 @@ class DataConfig:
             doc["colorSlug"] = self.color_col
 
         return doc
+
+
+def _build_column_defs(config: Dict[str, Any]) -> str:
+    """Build columnDefs array from metadata for OwidTable constructor."""
+    owid_dataset = config.get("owidDataset", {})
+    metadata = owid_dataset.get("metadata", {})
+
+    column_defs = []
+    for col_name, col_metadata in metadata.items():
+        col_def = {
+            "slug": col_name,
+            "type": "Numeric"
+        }
+
+        # Extract display settings if present
+        display = col_metadata.get("display", {})
+        if display:
+            col_def["display"] = display
+
+        column_defs.append(col_def)
+
+    # Return as JSON string for embedding in JavaScript
+    return json.dumps(column_defs)
 
 
 def _config_to_grapher(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -424,6 +478,9 @@ def generate_iframe(config: Dict[str, Any]) -> str:
     # Extract data for CSV and prepare config for GrapherState API
     csv_data = _config_to_csv(config)
 
+    # Build column definitions from metadata
+    column_defs = _build_column_defs(config)
+
     # Build grapher config from the config dict
     grapher_config = _config_to_grapher(config)
 
@@ -466,7 +523,8 @@ def generate_iframe(config: Dict[str, Any]) -> str:
       }}
 
       const csvData = `{csv_data}`;
-      const table = new OwidTable(csvData);
+      const columnDefs = {column_defs};
+      const table = new OwidTable(csvData, columnDefs);
 
       const grapherState = new GrapherState({{
         table: table,

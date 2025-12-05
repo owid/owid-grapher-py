@@ -174,3 +174,105 @@ def test_axis_labels():
 
     assert config["xAxis"] == {"label": "GDP per capita ($)"}
     assert config["yAxis"] == {"label": "Life expectancy (years)"}
+
+
+def test_axis_units():
+    """Test axis unit configuration."""
+    df = pd.DataFrame(
+        {
+            "gdp": [1000, 5000, 10000],
+            "life_expectancy": [50, 70, 80],
+            "country": ["Country A", "Country B", "Country C"],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_scatter()
+        .encode(x="gdp", y="life_expectancy", entity="country")
+        .axis(x_unit="$", y_unit="years")
+    )
+    config = ch.export()
+
+    # Check that units are in metadata
+    metadata = config["owidDataset"]["metadata"]
+    assert metadata["gdp"]["display"]["unit"] == "$"
+    assert metadata["life_expectancy"]["display"]["unit"] == "years"
+
+
+def test_axis_units_line_chart():
+    """Test axis unit configuration for line charts."""
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010, 2020],
+            "population": [1000, 2000, 3000],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_line()
+        .encode(x="year", y="population")
+        .axis(y_unit="millions")
+    )
+    config = ch.export()
+
+    # Check that y_unit is in metadata for y column
+    metadata = config["owidDataset"]["metadata"]
+    assert metadata["population"]["display"]["unit"] == "millions"
+
+
+def test_column_defs_generation():
+    """Test that _build_column_defs correctly extracts units from metadata."""
+    config = {
+        "owidDataset": {
+            "metadata": {
+                "gdp": {"display": {"unit": "$"}},
+                "life_expectancy": {"display": {"unit": "years"}},
+            }
+        }
+    }
+
+    import json
+    column_defs_str = gr._build_column_defs(config)
+    column_defs = json.loads(column_defs_str)
+
+    # Check that we have two column definitions
+    assert len(column_defs) == 2
+
+    # Check structure
+    gdp_def = next(d for d in column_defs if d["slug"] == "gdp")
+    assert gdp_def["type"] == "Numeric"
+    assert gdp_def["display"]["unit"] == "$"
+
+    life_def = next(d for d in column_defs if d["slug"] == "life_expectancy")
+    assert life_def["type"] == "Numeric"
+    assert life_def["display"]["unit"] == "years"
+
+
+def test_scatter_plot_iframe_with_units():
+    """Test that scatter plot iframe includes columnDefs with units."""
+    df = pd.DataFrame(
+        {
+            "gdp": [1000, 5000, 10000],
+            "life_expectancy": [50, 70, 80],
+            "country": ["Country A", "Country B", "Country C"],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_scatter()
+        .encode(x="gdp", y="life_expectancy", entity="country")
+        .axis(x_unit="$", y_unit="years")
+    )
+
+    # Get the iframe HTML
+    html = ch._repr_html_()
+
+    # Check that columnDefs is present in the HTML
+    assert "const columnDefs" in html
+
+    # Check that units are in the columnDefs
+    assert '"unit": "$"' in html
+    assert '"unit": "years"' in html
+
+    # Check that OwidTable is called with columnDefs
+    assert "new OwidTable(csvData, columnDefs)" in html
