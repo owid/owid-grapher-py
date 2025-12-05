@@ -1,4 +1,0 @@
-# Chart
-
-::: owid.grapher.Chart
-

@@ -18,10 +18,9 @@ repo_url = "https://github.com/owid/owid-grapher-py"
 nav = [
     { "Home" = "index.md" },
     { "API Reference" = [
-        { "Chart" = "api-reference/chart.md" },
-        { "Configuration" = "api-reference/config.md" },
-        { "OWID Site Integration" = "api-reference/site.md" },
-        { "Notebook Tools" = "api-reference/notebook.md" },
+        { "owid.grapher" = "api-reference/grapher.md" },
+        { "owid.grapher.notebook" = "api-reference/notebook.md" },
+        { "owid.site" = "api-reference/site.md" },
     ] },
 ]
 

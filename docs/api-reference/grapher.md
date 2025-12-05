@@ -1,4 +1,4 @@
-# Configuration
+::: owid.grapher.Chart
 
 ::: owid.grapher.ChartConfig
 
