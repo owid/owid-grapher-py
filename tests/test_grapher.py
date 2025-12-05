@@ -330,3 +330,56 @@ def test_axis_and_interact_compatibility():
     assert config["yAxis"]["label"] == "Population (millions)"
     assert config["yAxis"]["scaleType"] == "linear"
     assert config["yAxis"]["canChangeScaleType"] is True
+
+
+def test_xaxis_yaxis_methods():
+    """Test xaxis() and yaxis() methods provide cleaner API."""
+    df = pd.DataFrame(
+        {
+            "gdp": [1000, 5000, 10000],
+            "life_expectancy": [50, 70, 80],
+            "country": ["Country A", "Country B", "Country C"],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_scatter()
+        .encode(x="gdp", y="life_expectancy", entity="country")
+        .xaxis(label="GDP per capita", unit="$", scale="log", scale_control=True)
+        .yaxis(label="Life expectancy", unit="years")
+    )
+    config = ch.export()
+
+    # Check x-axis configuration
+    assert config["xAxis"]["label"] == "GDP per capita"
+    assert config["xAxis"]["scaleType"] == "log"
+    assert config["xAxis"]["canChangeScaleType"] is True
+
+    # Check y-axis configuration
+    assert config["yAxis"]["label"] == "Life expectancy"
+
+    # Check units in metadata
+    metadata = config["owidDataset"]["metadata"]
+    assert metadata["gdp"]["display"]["unit"] == "$"
+    assert metadata["life_expectancy"]["display"]["unit"] == "years"
+
+
+def test_matching_entities_only():
+    """Test matchingEntitiesOnly filter."""
+    df = pd.DataFrame(
+        {
+            "gdp": [1000, 5000, 10000],
+            "life_expectancy": [50, 70, 80],
+            "country": ["Country A", "Country B", "Country C"],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_scatter()
+        .encode(x="gdp", y="life_expectancy", entity="country")
+        .filter(matching_entities_only=True)
+    )
+    config = ch.export()
+
+    # Check that matchingEntitiesOnly is set
+    assert config["matchingEntitiesOnly"] is True
