@@ -22,13 +22,32 @@ DATE_DISPLAY = {"yearIsDay": True, "zeroDay": "1970-01-01"}
 class Chart:
     """Create interactive OWID charts from pandas DataFrames.
 
+    The Chart class provides a declarative API for building interactive visualizations
+    using OWID's Grapher library. Charts are configured through method chaining and
+    render directly in Jupyter notebooks.
+
     Args:
-        data: A pandas DataFrame containing the data to visualize.
+        data: A pandas DataFrame containing the data to visualize. The DataFrame should
+            have columns for time/x-axis, values/y-axis, and optionally entities for grouping.
 
     Example:
         ```python
-        >>> df = pd.DataFrame({'year': [2020, 2021], 'value': [100, 110]})
-        >>> Chart(df).mark_line().encode(x='year', y='value')
+        import pandas as pd
+        from owid.grapher import Chart
+
+        df = pd.DataFrame({
+            'year': [2020, 2021, 2022],
+            'country': ['USA', 'China', 'India'],
+            'gdp': [21.4, 14.7, 2.9]
+        })
+
+        Chart(df).mark_line().encode(
+            x='year',
+            y='gdp',
+            entity='country'
+        ).label(
+            title='GDP by Country'
+        )
         ```
     """
 
@@ -56,15 +75,46 @@ class Chart:
     ) -> "Chart":
         """Map DataFrame columns to visual properties.
 
+        This method establishes the visual encoding by mapping DataFrame columns to
+        chart dimensions. The behavior varies by chart type:
+
+        - **Line/Bar charts**: `x` is time, `y` is values, `entity` groups lines/bars
+        - **Scatter plots**: `x` and `y` are both numeric values, `entity` groups points
+
         Args:
-            x: Column name for x-axis (usually time or numeric values).
-            y: Column name for y-axis (values to plot).
-            entity: Column name for grouping data (e.g., countries).
-            color: Column name for color encoding (scatter plots only).
-            size: Column name for size encoding (scatter plots only).
+            x: Column name for x-axis. For line/bar charts, typically a time column
+                ('year', 'date'). For scatter plots, a numeric value column.
+            y: Column name for y-axis values to plot. For bar charts, can be the entity
+                column if you want entities on the y-axis.
+            entity: Column name for grouping data (e.g., 'country', 'region'). Each unique
+                value becomes a separate line/series. Optional for single-series charts.
+            color: Column name for color encoding in scatter plots. Values map to colors.
+            size: Column name for size encoding in scatter plots. Values map to point sizes.
 
         Returns:
             Self for method chaining.
+
+        Raises:
+            ValueError: If a specified column name is not found in the DataFrame.
+
+        Example:
+            ```python
+            # Line chart with multiple countries
+            Chart(df).mark_line().encode(
+                x='year',
+                y='population',
+                entity='country'
+            )
+
+            # Scatter plot with color and size
+            Chart(df).mark_scatter().encode(
+                x='gdp_per_capita',
+                y='life_expectancy',
+                entity='country',
+                color='continent',
+                size='population'
+            )
+            ```
         """
         self.x = x
         self.y = y
@@ -171,7 +221,24 @@ class Chart:
         x_scale_control: Optional[bool] = None,
         y_scale_control: Optional[bool] = None,
     ) -> "Chart":
-        """Configure both axes at once. For single-axis config, use xaxis() or yaxis()."""
+        """Configure both axes at once.
+
+        Convenience method for setting properties on both axes. For single-axis
+        configuration, use xaxis() or yaxis() instead.
+
+        Args:
+            x_label: Label text for x-axis.
+            y_label: Label text for y-axis.
+            x_unit: Unit suffix for x-axis values (e.g., '$', '%', 'kg').
+            y_unit: Unit suffix for y-axis values.
+            x_scale: Scale type for x-axis ('linear' or 'log').
+            y_scale: Scale type for y-axis ('linear' or 'log').
+            x_scale_control: If True, adds UI control to toggle x-axis scale.
+            y_scale_control: If True, adds UI control to toggle y-axis scale.
+
+        Returns:
+            Self for method chaining.
+        """
         if x_label is not None:
             self.config.x_axis["label"] = x_label
         if y_label is not None:
@@ -191,20 +258,43 @@ class Chart:
         return self
 
     def mark_scatter(self) -> "Chart":
-        """Create a scatter plot."""
+        """Create a scatter plot.
+
+        Scatter plots display individual data points with x and y positions. Use `color`
+        and `size` encodings for additional dimensions. Best for showing relationships
+        between two numeric variables.
+
+        Returns:
+            Self for method chaining.
+        """
         self.config.type = "ScatterPlot"
         return self
 
     def mark_line(self) -> "Chart":
-        """Create a line chart."""
+        """Create a line chart.
+
+        Line charts connect data points with lines, ideal for showing trends over time.
+        Multiple entities create multiple lines. This is the default chart type.
+
+        Returns:
+            Self for method chaining.
+        """
         self.config.type = "LineChart"
         return self
 
     def mark_bar(self, stacked: bool = False) -> "Chart":
         """Create a bar chart.
 
+        Bar charts display categorical data with rectangular bars. Bars can be shown
+        side-by-side (default) or stacked on top of each other.
+
         Args:
-            stacked: If True, creates a stacked bar chart.
+            stacked: If True, creates a stacked bar chart where bars for different
+                entities are stacked vertically. If False (default), bars are shown
+                side-by-side.
+
+        Returns:
+            Self for method chaining.
         """
         if stacked:
             self.config.type = "StackedDiscreteBar"
@@ -274,8 +364,16 @@ class Chart:
     def transform(self, relative: bool) -> "Chart":
         """Transform data to relative or absolute values.
 
+        Display values as percentage change from a baseline (relative mode) or as
+        absolute values (default). In relative mode, the first time period serves
+        as the baseline (100%).
+
         Args:
-            relative: If True, show as percentage change from baseline.
+            relative: If True, show values as percentage change from baseline.
+                If False, show absolute values.
+
+        Returns:
+            Self for method chaining.
         """
         self.config.stack_mode = "relative" if relative else "absolute"
         return self
@@ -283,8 +381,16 @@ class Chart:
     def filter(self, matching_entities_only: bool = True) -> "Chart":
         """Filter entities to only show those with complete data.
 
+        When enabled, only entities that have data for all time periods and dimensions
+        will be shown. Useful for ensuring fair comparisons by excluding entities with
+        incomplete data.
+
         Args:
-            matching_entities_only: Only show entities with data for all dimensions.
+            matching_entities_only: If True, only show entities with complete data across
+                all dimensions and time periods. If False, show all entities even with gaps.
+
+        Returns:
+            Self for method chaining.
         """
         self.config.matching_entities_only = matching_entities_only
         return self
@@ -331,16 +437,60 @@ class Chart:
 
 
 class TimeType(Enum):
+    """Enumeration for time dimension types.
+
+    Determines how time values are interpreted and displayed in charts.
+
+    Attributes:
+        DAY: Daily or date-based data. Automatically detected when x='date'.
+            Uses ISO date format (YYYY-MM-DD).
+        YEAR: Annual data (default). Standard yearly time series.
+    """
+
     DAY = "day"
     YEAR = "year"
 
 
 ChartType = Literal["LineChart", "DiscreteBar", "ScatterPlot", "StackedDiscreteBar"]
+"""Type alias for supported chart types.
+
+Chart types:
+    - LineChart: Time series line chart
+    - DiscreteBar: Bar chart (side-by-side bars)
+    - StackedDiscreteBar: Stacked bar chart
+    - ScatterPlot: Scatter plot with x/y numeric dimensions
+"""
 
 
 @dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
 @dataclass
 class ChartConfig:
+    """Configuration for OWID chart display and behavior.
+
+    This dataclass holds all chart-level settings including title, subtitle, chart type,
+    axis configuration, and UI control visibility. Properties use snake_case in Python
+    but are automatically converted to camelCase for the JavaScript Grapher library.
+
+    Attributes:
+        tab: Active tab to display ('chart' or 'map').
+        title: Main chart title.
+        subtitle: Additional context below title.
+        note: Footnote text displayed at bottom.
+        source_desc: Data source attribution.
+        hide_logo: If True, hides OWID logo (default for embedded charts).
+        is_published: Publication status flag.
+        type: Chart type ('LineChart', 'DiscreteBar', 'ScatterPlot', 'StackedDiscreteBar').
+        hide_title_annotation: If True, hides the annotation arrow on title.
+        hide_legend: If True, hides the chart legend.
+        hide_entity_controls: If True, hides the entity/country picker UI.
+        hide_relative_toggle: If True, hides relative/absolute toggle button.
+        has_map_tab: If True, enables the map visualization tab.
+        stack_mode: For stacked charts, 'absolute' or 'relative' (percentage).
+        matching_entities_only: If True, only show entities with complete data.
+        x_axis: Dictionary of x-axis configuration (label, scale, etc).
+        y_axis: Dictionary of y-axis configuration (label, scale, etc).
+    """
+
     tab: str = "chart"
     title: str = ""
     subtitle: str = ""
@@ -367,8 +517,26 @@ class ChartConfig:
 @dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
 @dataclass
 class Dimension:
-    """
-    "dimensions": [{"property": "y", "variableName": "population"}],
+    """Maps a DataFrame column to a chart dimension.
+
+    Dimensions define how data columns are used in the chart visualization. Each
+    dimension specifies a visual property (x, y, color) and the source column name,
+    along with optional display settings.
+
+    Attributes:
+        property: The visual property this dimension controls ('y' for y-axis, 'x' for x-axis,
+            'color' for color encoding).
+        variable_name: Name of the column from the DataFrame to use for this dimension.
+        display: Optional dictionary of display settings (e.g., {'unit': '$', 'numDecimalPlaces': 2}).
+
+    Example:
+        ```python
+        Dimension(
+            property="y",
+            variable_name="population",
+            display={"unit": "people", "numDecimalPlaces": 0}
+        )
+        ```
     """
 
     property: Literal["y", "x", "color"]
@@ -378,7 +546,28 @@ class Dimension:
 
 @dataclass
 class DataConfig:
-    """Stores data and column mappings for chart rendering."""
+    """Stores data and column mappings for chart rendering.
+
+    Internal class that handles the conversion between pandas DataFrame structure and
+    OWID Grapher's expected data format. This class manages column mappings, entity
+    selection, time ranges, and chart-type-specific data transformations.
+
+    Attributes:
+        df: Source pandas DataFrame containing the data.
+        x_col: Column name for x-axis (time for line charts, value for bar/scatter).
+        y_cols: List of column names for y-axis values.
+        entity_col: Column name for entity/grouping (e.g., 'country').
+        year_col: Column name for year dimension (used in scatter plots with time).
+        color_col: Column name for color encoding (scatter plots).
+        size_col: Column name for size encoding (scatter plots).
+        time_type: Whether time is yearly (YEAR) or daily (DAY).
+        chart_type: Type of chart being created.
+        selected_entity_names: List of entity names to display by default.
+        min_time: Minimum time value for chart range (or 'latest' for scatter).
+        max_time: Maximum time value for chart range.
+        x_unit: Unit label for x-axis values (e.g., '$', 'kg').
+        y_unit: Unit label for y-axis values.
+    """
 
     df: pd.DataFrame
     x_col: str  # Time column (or x-axis for scatter)
