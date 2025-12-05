@@ -1,10 +1,25 @@
 [project]
 name = "owid-grapher-py"
-version = "0.2.0"
+version = "0.2.1"
 description = "OWID charts for rendering in Jupyter notebooks."
+readme = "README.md"
+license = {text = "MIT"}
 authors = [
     {name = "Lars Yencken", email = "lars@yencken.org"},
     {name = "Mojmir Vinkler", email = "mojmir@ourworldindata.org"}
+]
+keywords = ["owid", "data-visualization", "jupyter", "charts", "graphs", "ourworldindata"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: Jupyter",
+    "Topic :: Scientific/Engineering :: Visualization",
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -15,6 +30,12 @@ dependencies = [
     "jsonschema>=3.2.0",
     "click>=8.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/owid/owid-grapher-py"
+Repository = "https://github.com/owid/owid-grapher-py"
+Documentation = "https://github.com/owid/owid-grapher-py#readme"
+"Bug Tracker" = "https://github.com/owid/owid-grapher-py/issues"
 
 [tool.uv]
 dev-dependencies = [

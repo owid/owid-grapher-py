@@ -16,7 +16,7 @@ This package uses the OWID Grapher library to render interactive charts. The API
 ## Installing
 
 ```bash
-pip install git+https://github.com/owid/owid-grapher-py
+pip install owid-grapher-py
 ```
 
 ## Quick Start
@@ -295,6 +295,10 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.2.1`
+    - Add comprehensive PyPI metadata (keywords, classifiers, project URLs)
+    - Add README.md as package long description
+    - Update installation instructions to use PyPI
 - `0.2.0`
     - Add scatter plot support with color and size encoding
     - Add `xaxis()` and `yaxis()` methods for axis configuration
