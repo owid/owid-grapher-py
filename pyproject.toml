@@ -1,6 +1,6 @@
 [project]
 name = "owid-grapher-py"
-version = "0.2.1"
+version = "0.2.2"
 description = "OWID charts for rendering in Jupyter notebooks."
 readme = "README.md"
 license = {text = "MIT"}

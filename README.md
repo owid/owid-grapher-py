@@ -295,6 +295,8 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.2.2`
+    - Fix quickstart notebook to handle autoreload gracefully in Google Colab
 - `0.2.1`
     - Add comprehensive PyPI metadata (keywords, classifiers, project URLs)
     - Add README.md as package long description
