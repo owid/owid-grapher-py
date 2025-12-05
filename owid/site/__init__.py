@@ -67,8 +67,10 @@ def get_chart_data(
         ValueError: If neither url nor slug is provided.
 
     Example:
+        ```python
         >>> df = get_chart_data(slug='life-expectancy')
         >>> df = get_chart_data(url='https://ourworldindata.org/grapher/co2-emissions')
+        ```
     """
     if not url and not slug:
         raise ValueError("must provide an url or a slug")

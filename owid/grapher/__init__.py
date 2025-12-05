@@ -26,8 +26,10 @@ class Chart:
         data: A pandas DataFrame containing the data to visualize.
 
     Example:
+        ```python
         >>> df = pd.DataFrame({'year': [2020, 2021], 'value': [100, 110]})
         >>> Chart(df).mark_line().encode(x='year', y='value')
+        ```
     """
 
     def __init__(self, data: pd.DataFrame):

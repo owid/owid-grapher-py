@@ -2,6 +2,8 @@
 
 Create interactive [Our World in Data](https://ourworldindata.org) charts in Jupyter notebooks.
 
+This library provides a Python API for building charts using OWID's Grapher visualization library. It's useful for exploring datasets with interactive visualizations, creating publication-ready charts for research and education, and documenting data analysis in reproducible notebooks. The package integrates seamlessly with pandas DataFrames and renders directly in Jupyter environments.
+
 ## Installation
 
 ```bash
@@ -23,32 +25,9 @@ df = pd.DataFrame({
 Chart(df).mark_line().encode(x='year', y='population')
 ```
 
-## Documentation
-
-- [API Reference](api-reference/chart.md)
-- [Examples Notebook](https://github.com/owid/owid-grapher-py/blob/master/examples/quickstart.ipynb)
-
-
-## Use Cases
-
-- **Data Analysis**: Explore datasets with interactive visualizations
-- **Education**: Create engaging charts for teaching and presentations
-- **Research**: Visualize research data with professional, publication-ready charts
-- **Reproducible Science**: Document your analysis with interactive notebooks
-- **Prototyping**: Quickly iterate on data visualizations
-
-## How It Works
-
-OWID's Grapher library uses a JSON config format for all charts. This package:
-
-1. Takes your pandas DataFrame and chart configuration
-2. Converts it to the Grapher's internal format (CSV + GrapherState config)
-3. Renders an iframe in Jupyter that loads the OWID Grapher library
-4. The Grapher library renders the interactive chart
-
-## Get Started
-
-Ready to create your first chart? Check out the [Installation Guide](getting-started/installation.md) and [Quick Start Tutorial](getting-started/quickstart.md).
+!!! tip "Learn from more examples!"
+    - Check out our [Jupyter notebook](https://github.com/owid/owid-grapher-py/blob/master/examples/quickstart.ipynb)!
+    -  Check our examples on [GitHub][https://github.com/owid/owid-grapher-py)
 
 ## Community & Support
 
