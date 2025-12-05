@@ -4,8 +4,25 @@
 #  owid-grapher-py
 #
 
-"""
-Automatically generating notebooks from graphers.
+"""Tools for generating Jupyter notebooks from OWID chart configurations.
+
+This module provides utilities to reverse-engineer OWID chart configurations back into
+Python code that recreates the charts using the owid-grapher-py API. This is useful for:
+
+- Learning how to create specific chart types
+- Converting existing OWID charts to notebooks for customization
+- Generating example code from live charts
+
+Example:
+    ```python
+    from owid.site import get_chart_config, get_chart_data
+    from owid.grapher.notebook import translate_config
+
+    config = get_chart_config(url='https://ourworldindata.org/grapher/life-expectancy')
+    data = get_chart_data(url='https://ourworldindata.org/grapher/life-expectancy')
+    python_code = translate_config(config, data)
+    print(python_code)
+    ```
 """
 
 import json
@@ -52,7 +69,44 @@ WHITELIST_SCHEMA = {
 
 
 def translate_config(config: dict, data: pd.DataFrame) -> str:
-    "Turn a grapher config into a python string describing the chart."
+    """Convert an OWID chart configuration into Python code.
+
+    Takes a chart configuration dictionary (as returned by get_chart_config) and the
+    corresponding data, and generates Python code that recreates the chart using the
+    owid-grapher-py Chart API.
+
+    Args:
+        config: OWID chart configuration dictionary containing chart type, dimensions,
+            selections, labels, and other settings.
+        data: pandas DataFrame containing the chart data in long format (typically
+            with 'year'/'date', 'entity', and 'value' columns).
+
+    Returns:
+        String containing Python code that recreates the chart. The code uses method
+        chaining with Chart().mark_*().encode().label() etc.
+
+    Raises:
+        UnsupportedChartType: If the chart type is not yet supported for translation.
+            Currently supports: LineChart.
+
+    Example:
+        ```python
+        config = get_chart_config(slug='life-expectancy')
+        data = get_chart_data(slug='life-expectancy')
+        code = translate_config(config, data)
+        print(code)
+        # Output:
+        # grapher.Chart(
+        #     data
+        # ).encode(
+        #     x="year",
+        #     y="value",
+        #     entity="entity"
+        # ).label(
+        #     title="Life Expectancy"
+        # )
+        ```
+    """
     # jsonschema.validate(config, WHITELIST_SCHEMA)
 
     chart_type = config.get("type", "LineChart")
@@ -63,6 +117,18 @@ def translate_config(config: dict, data: pd.DataFrame) -> str:
 
 
 def translate_line_chart(config: dict, data: pd.DataFrame) -> str:
+    """Translate a LineChart configuration to Python code.
+
+    Generates Python code for creating a line chart by analyzing the configuration
+    and determining appropriate encoding, selection, labels, and interaction settings.
+
+    Args:
+        config: Chart configuration dictionary for a LineChart.
+        data: DataFrame containing the chart data.
+
+    Returns:
+        Python code string for creating the line chart.
+    """
     encoding = _gen_encoding(config, data)
     preselection, selection = _gen_selection(config, data)
     labels = _gen_labels(config)
@@ -77,6 +143,17 @@ grapher.Chart(
 
 
 def _gen_transform(config: dict) -> str:
+    """Generate the .transform() method call if needed.
+
+    Checks if the chart uses relative (percentage) mode.
+
+    Args:
+        config: Chart configuration dictionary.
+
+    Returns:
+        Python code string for .transform(relative=True) if applicable,
+        empty string otherwise.
+    """
     if config.get("stackMode") == "relative":
         return ".transform(\n     relative=True\n)"
 
@@ -84,6 +161,19 @@ def _gen_transform(config: dict) -> str:
 
 
 def _gen_encoding(config: dict, data: pd.DataFrame) -> str:
+    """Generate the .encode() method call for the chart.
+
+    Analyzes the config and data to determine appropriate x, y, and entity encodings.
+    Detects whether to use 'date' or 'year' for x-axis, and whether an entity
+    dimension is needed based on the number of dimensions and selected entities.
+
+    Args:
+        config: Chart configuration dictionary.
+        data: DataFrame containing the chart data.
+
+    Returns:
+        Python code string for the .encode() method call.
+    """
     if "date" in data:
         x = "date"
     else:
@@ -106,11 +196,23 @@ def _gen_encoding(config: dict, data: pd.DataFrame) -> str:
 
 
 def _gen_selection(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
-    """
-    The config may select one variable and some of many entities, or it may select one entity and
-    some of many variables.
+    """Generate entity pre-selection and .select() method call.
 
-    If we have multiple variables, pre-select the entity.
+    Determines whether to pre-filter the DataFrame (for single-entity charts) or
+    use the .select() method (for multi-entity charts). Also handles time range
+    selection if specified in the config.
+
+    The config may select one variable with many entities, or one entity with many
+    variables. For multiple variables, we pre-select the entity in the DataFrame.
+
+    Args:
+        config: Chart configuration dictionary.
+        data: DataFrame containing the chart data.
+
+    Returns:
+        Tuple of (pre_selection_string, selection_string) where:
+        - pre_selection_string: DataFrame filtering code (e.g., '[data.entity == "USA"]')
+        - selection_string: .select() method call code
     """
     pre_selection, selection = _gen_entity_selection(config, data)
 
@@ -159,6 +261,20 @@ def _gen_selection(config: dict, data: pd.DataFrame) -> Tuple[str, str]:
 def _gen_entity_selection(
     config: dict, data: pd.DataFrame
 ) -> Tuple[List[str], List[str]]:
+    """Extract entity selection from config.
+
+    Determines which entities are selected in the chart, either from selectedEntityNames
+    or by resolving entity IDs from selectedData.
+
+    Args:
+        config: Chart configuration dictionary.
+        data: DataFrame containing the chart data.
+
+    Returns:
+        Tuple of (pre_selection_entities, selection_entities) where:
+        - pre_selection_entities: Entities to filter in DataFrame (for multi-variable charts)
+        - selection_entities: Entities to pass to .select() method (for single-variable charts)
+    """
     entities: List[str] = []
 
     if config.get("selectedEntityNames"):
@@ -191,6 +307,18 @@ def _gen_entity_selection(
 
 
 def _gen_interaction(config: dict) -> str:
+    """Generate the .interact() method call for UI controls.
+
+    Analyzes the config to determine which interactive controls are enabled
+    (entity picker, scale toggle, relative/absolute toggle, map tab).
+
+    Args:
+        config: Chart configuration dictionary.
+
+    Returns:
+        Python code string for .interact() method call, or empty string if no
+        interaction controls are enabled.
+    """
     parts = []
 
     entity_control = not config.get("hideEntityControls")
@@ -215,6 +343,17 @@ def _gen_interaction(config: dict) -> str:
 
 
 def _gen_labels(config: dict) -> str:
+    """Generate the .label() method call for chart text.
+
+    Extracts title, subtitle, source description, and notes from the config.
+
+    Args:
+        config: Chart configuration dictionary.
+
+    Returns:
+        Python code string for .label() method call, or empty string if no
+        labels are present.
+    """
     to_snake = {"sourceDesc": "source_desc"}
 
     labels = {}
@@ -233,11 +372,29 @@ def _gen_labels(config: dict) -> str:
 
 
 class UnsupportedChartType(Exception):
+    """Raised when attempting to translate an unsupported chart type.
+
+    Currently, only LineChart is fully supported. Other chart types
+    (ScatterPlot, DiscreteBar, StackedDiscreteBar) will raise this exception.
+    """
+
     pass
 
 
 def generate_notebook(config: dict, path: str) -> None:
-    "Generate a jupyter notebook for the given config in the provided folder."
+    """Generate a Jupyter notebook from a chart configuration.
+
+    Fetches the chart data, translates the config to Python code, and creates
+    a complete Jupyter notebook with imports, data loading, and chart code.
+
+    Args:
+        config: OWID chart configuration dictionary (must include 'slug').
+        path: Directory path where the notebook file will be saved. The notebook
+            will be named {slug}.ipynb.
+
+    Raises:
+        UnsupportedChartType: If the chart type cannot be translated.
+    """
     owid_data = get_owid_data(config)
     data = owid_data_to_frame(owid_data)
     py = translate_config(config, data)
@@ -248,6 +405,17 @@ def generate_notebook(config: dict, path: str) -> None:
 
 
 def save_to_notebook(slug: str, title: str, py: str, path: str) -> None:
+    """Save chart code to a Jupyter notebook file.
+
+    Creates a new notebook with the chart title, imports, data loading, and
+    the generated Python code.
+
+    Args:
+        slug: Chart slug for the filename and data loading.
+        title: Chart title for the notebook heading.
+        py: Python code string to include in the notebook.
+        path: Directory path where the notebook will be saved.
+    """
     nb_file = join(path, f"{slug}.ipynb")
 
     nb = _new_notebook(slug, title, py)
@@ -257,6 +425,22 @@ def save_to_notebook(slug: str, title: str, py: str, path: str) -> None:
 
 
 def _new_notebook(slug: str, title: str, py: str):
+    """Create a new nbformat notebook object.
+
+    Constructs a notebook with proper metadata and cells for:
+    - Title (markdown)
+    - Imports (code)
+    - Data loading (code)
+    - Chart creation (code)
+
+    Args:
+        slug: Chart slug for data loading.
+        title: Chart title for heading.
+        py: Python code for chart creation.
+
+    Returns:
+        nbformat NotebookNode object.
+    """
     nb = nbf.v4.new_notebook()
     nb["metadata"]["kernelspec"] = {
         "display_name": "Python 3 (ipykernel)",

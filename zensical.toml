@@ -1,0 +1,137 @@
+# zensical.toml
+
+[project]
+# Top-level settings
+site_name = "OWID Grapher Python"
+site_url = "https://github.com/owid/owid-grapher-py"
+site_description = "Create interactive Our World in Data charts in Jupyter notebooks"
+site_author = "Our World in Data"
+copyright = '<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> • <a href="https://ourworldindata.org/">Our World in Data</a>'
+docs_dir = "docs"
+edit_uri = "edit/master/docs/"
+
+# Repository information
+repo_name = "owid/owid-grapher-py"
+repo_url = "https://github.com/owid/owid-grapher-py"
+
+# Navigation structure
+nav = [
+    { "Home" = "index.md" },
+    { "API Reference" = [
+        { "owid.grapher" = "api-reference/grapher.md" },
+        { "owid.grapher.notebook" = "api-reference/notebook.md" },
+        { "owid.site" = "api-reference/site.md" },
+    ] },
+]
+
+# Extra settings
+[project.extra]
+generator = true
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/owid/owid-grapher-py"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/python"
+link = "https://pypi.org/project/owid-grapher-py/"
+
+# Theme configuration
+[project.theme]
+name = "zensical"
+language = "en"
+logo = ""
+favicon = ""
+
+features = [
+    "content.code.copy",
+    "content.code.select",
+    "content.code.annotate",
+    "navigation.expand",
+    "navigation.footer",
+    "navigation.instant",
+    "navigation.sections",
+    "navigation.tabs",
+    "navigation.top",
+    "navigation.tracking",
+    "search.share",
+    "search.suggest",
+    "search.highlight",
+    "toc.follow",
+]
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+# Palette toggle for light mode
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "blue"
+accent = "indigo"
+
+[project.theme.palette.toggle]
+icon = "material/brightness-7"
+name = "Switch to dark mode"
+
+# Palette toggle for dark mode
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "blue"
+accent = "indigo"
+
+[project.theme.palette.toggle]
+icon = "material/brightness-4"
+name = "Switch to light mode"
+
+# Markdown extensions
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+footnotes = {}
+md_in_html = {}
+tables = {}
+
+[project.markdown_extensions.toc]
+permalink = true
+
+[project.markdown_extensions.pymdownx]
+details = {}
+inlinehilite = {}
+snippets = {}
+
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+line_spans = "__span"
+pygments_lang_class = true
+
+[project.markdown_extensions.pymdownx.superfences]
+
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+
+# Plugins
+[project.plugins]
+
+[project.plugins.search]
+
+[project.plugins.mkdocstrings]
+default_handler = "python"
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["."]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+show_source = true
+show_root_heading = true
+show_root_toc_entry = true
+show_if_no_docstring = false
+members_order = "source"
+heading_level = 2
+show_signature_annotations = true
+separate_signature = true
+merge_init_into_class = true
+docstring_section_style = "spacy"
