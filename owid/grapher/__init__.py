@@ -79,6 +79,10 @@ class Chart:
         y_label: Optional[str] = None,
         x_unit: Optional[str] = None,
         y_unit: Optional[str] = None,
+        x_scale: Optional[Literal["linear", "log"]] = None,
+        y_scale: Optional[Literal["linear", "log"]] = None,
+        x_scale_control: Optional[bool] = None,
+        y_scale_control: Optional[bool] = None,
     ) -> "Chart":
         if x_label is not None:
             self.config.x_axis["label"] = x_label
@@ -88,6 +92,14 @@ class Chart:
             self.x_unit = x_unit
         if y_unit is not None:
             self.y_unit = y_unit
+        if x_scale is not None:
+            self.config.x_axis["scaleType"] = x_scale
+        if y_scale is not None:
+            self.config.y_axis["scaleType"] = y_scale
+        if x_scale_control is not None:
+            self.config.x_axis["canChangeScaleType"] = x_scale_control
+        if y_scale_control is not None:
+            self.config.y_axis["canChangeScaleType"] = y_scale_control
         return self
 
     def mark_scatter(self) -> "Chart":
@@ -116,10 +128,9 @@ class Chart:
             self.config.hide_relative_toggle = False
 
         if scale_control is not None:
-            self.config.y_axis = {
-                "scaleType": "linear",
-                "canChangeScaleType": scale_control,
-            }
+            # Update y_axis without overwriting existing settings
+            self.config.y_axis["scaleType"] = "linear"
+            self.config.y_axis["canChangeScaleType"] = scale_control
 
         if entity_control is not None:
             self.config.hide_entity_controls = not entity_control
