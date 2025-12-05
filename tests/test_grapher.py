@@ -276,3 +276,57 @@ def test_scatter_plot_iframe_with_units():
 
     # Check that OwidTable is called with columnDefs
     assert "new OwidTable(csvData, columnDefs)" in html
+
+
+def test_axis_scale_configuration():
+    """Test axis scale type and control configuration."""
+    df = pd.DataFrame(
+        {
+            "gdp": [1000, 5000, 10000],
+            "life_expectancy": [50, 70, 80],
+            "country": ["Country A", "Country B", "Country C"],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_scatter()
+        .encode(x="gdp", y="life_expectancy", entity="country")
+        .axis(
+            x_label="GDP per capita",
+            x_scale="log",
+            x_scale_control=True,
+            y_label="Life expectancy",
+        )
+    )
+    config = ch.export()
+
+    # Check x-axis configuration
+    assert config["xAxis"]["label"] == "GDP per capita"
+    assert config["xAxis"]["scaleType"] == "log"
+    assert config["xAxis"]["canChangeScaleType"] is True
+
+    # Check y-axis configuration
+    assert config["yAxis"]["label"] == "Life expectancy"
+
+
+def test_axis_and_interact_compatibility():
+    """Test that axis() and interact() work together without conflicts."""
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010, 2020],
+            "population": [1000, 2000, 3000],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_line()
+        .encode(x="year", y="population")
+        .axis(y_label="Population (millions)")
+        .interact(scale_control=True)
+    )
+    config = ch.export()
+
+    # Check that both label and scale control are present
+    assert config["yAxis"]["label"] == "Population (millions)"
+    assert config["yAxis"]["scaleType"] == "linear"
+    assert config["yAxis"]["canChangeScaleType"] is True
