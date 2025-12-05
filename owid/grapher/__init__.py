@@ -73,6 +73,40 @@ class Chart:
         self.config.note = note
         return self
 
+    def xaxis(
+        self,
+        label: Optional[str] = None,
+        unit: Optional[str] = None,
+        scale: Optional[Literal["linear", "log"]] = None,
+        scale_control: Optional[bool] = None,
+    ) -> "Chart":
+        if label is not None:
+            self.config.x_axis["label"] = label
+        if unit is not None:
+            self.x_unit = unit
+        if scale is not None:
+            self.config.x_axis["scaleType"] = scale
+        if scale_control is not None:
+            self.config.x_axis["canChangeScaleType"] = scale_control
+        return self
+
+    def yaxis(
+        self,
+        label: Optional[str] = None,
+        unit: Optional[str] = None,
+        scale: Optional[Literal["linear", "log"]] = None,
+        scale_control: Optional[bool] = None,
+    ) -> "Chart":
+        if label is not None:
+            self.config.y_axis["label"] = label
+        if unit is not None:
+            self.y_unit = unit
+        if scale is not None:
+            self.config.y_axis["scaleType"] = scale
+        if scale_control is not None:
+            self.config.y_axis["canChangeScaleType"] = scale_control
+        return self
+
     def axis(
         self,
         x_label: Optional[str] = None,
@@ -84,6 +118,7 @@ class Chart:
         x_scale_control: Optional[bool] = None,
         y_scale_control: Optional[bool] = None,
     ) -> "Chart":
+        """Configure both axes at once. For single-axis config, use xaxis() or yaxis()."""
         if x_label is not None:
             self.config.x_axis["label"] = x_label
         if y_label is not None:
@@ -160,6 +195,11 @@ class Chart:
         self.config.stack_mode = "relative" if relative else "absolute"
         return self
 
+    def filter(self, matching_entities_only: bool = True) -> "Chart":
+        """Filter data to only show entities that have data for all dimensions."""
+        self.config.matching_entities_only = matching_entities_only
+        return self
+
     def _repr_html_(self):
         full_config = self.export()
         html = generate_iframe(full_config)
@@ -219,6 +259,7 @@ class ChartConfig:
     hide_relative_toggle: bool = True
     has_map_tab: bool = False
     stack_mode: Literal["relative", "absolute"] = "absolute"
+    matching_entities_only: bool = False
     x_axis: dict = field(default_factory=dict)
     y_axis: dict = field(default_factory=dict)
 
@@ -475,8 +516,8 @@ def _config_to_grapher(config: Dict[str, Any]) -> Dict[str, Any]:
         if config.get(field_name):
             grapher_config[field_name] = config[field_name]
 
-    # Pass through hide toggles
-    for field_name in ["hideRelativeToggle", "hideEntityControls"]:
+    # Pass through hide toggles and boolean flags
+    for field_name in ["hideRelativeToggle", "hideEntityControls", "matchingEntitiesOnly"]:
         if field_name in config:
             grapher_config[field_name] = config[field_name]
 
