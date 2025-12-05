@@ -35,7 +35,7 @@ Chart(df).mark_line().encode(x='year', y='population')
 - **Issues**: [Report bugs or request features](https://github.com/owid/owid-grapher-py/issues)
 - **PyPI**: [owid-grapher-py](https://pypi.org/project/owid-grapher-py/)
 
-!!! info "You can learn more about our data and engineering work [here](https://docs.owid.io/projects/etl/)"
+!!! info "You can learn more about our data and engineering work [here](https://docs.owid.io/projects/etl/)."
 
 ## License
 
