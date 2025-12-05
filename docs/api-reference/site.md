@@ -1,3 +1,1 @@
-# Site Integration
-
 ::: owid.site
