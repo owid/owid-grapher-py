@@ -27,7 +27,7 @@ Chart(df).mark_line().encode(x='year', y='population')
 
 !!! tip "Learn from more examples!"
     - Check out our [Jupyter notebook](https://github.com/owid/owid-grapher-py/blob/master/examples/quickstart.ipynb)!
-    -  Check our examples on [GitHub][https://github.com/owid/owid-grapher-py)
+    - Check our examples on [GitHub](https://github.com/owid/owid-grapher-py)
 
 ## Community & Support
 
