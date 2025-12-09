@@ -609,8 +609,10 @@ class Chart:
         return self
 
     def _repr_html_(self):
-        full_config = self.export()
-        html = generate_iframe(full_config)
+        export = self.export()
+        html = generate_iframe(
+            export["csv_data"], export["column_defs"], export["grapher_config"]
+        )
         return html
 
     def _get_primary_chart_type(self) -> "ChartType":
@@ -619,60 +621,292 @@ class Chart:
             return self.chart_types[0]  # type: ignore
         return "LineChart"
 
-    def export(self, include_data: bool = True) -> Dict[str, Any]:
-        """Export the chart configuration as a dictionary.
+    def _prepare_data(
+        self,
+    ) -> Tuple[
+        pd.DataFrame,
+        str,
+        List[str],
+        Optional[str],
+        Optional[str],
+        Optional[str],
+        List[str],
+        Optional[Any],
+        Optional[int],
+    ]:
+        """Prepare the dataframe and compute column mappings for export.
 
-        Args:
-            include_data: If True, includes the data in the export.
-
-        Returns:
-            Dictionary containing the full chart configuration.
+        Returns a tuple of:
+            (df, x_col, y_cols, entity_col, color_col, year_col, selected_entities, min_time, max_time)
         """
-        config = self.config.to_dict()  # type: ignore
-
-        # Add chart types and tab
-        chart_types = self.chart_types if self.chart_types else ["LineChart"]
-        config["chartTypes"] = chart_types
-
-        # Set tab based on default_tab or first chart type
-        if self.default_tab:
-            config["tab"] = self.default_tab
-        elif chart_types:
-            config["tab"] = _CHART_TYPE_TO_TAB.get(chart_types[0], "line")
-
-        # Auto-improve: show title annotation for line charts with titles
-        if self.config.title and "LineChart" in chart_types:
-            config["hideTitleAnnotation"] = False
-
-        # Convert MapConfig to dict (dataclass_json doesn't handle it automatically)
-        if self.config.map_config is not None:
-            config["mapConfig"] = self.config.map_config.to_dict()
-
-        primary_type = self._get_primary_chart_type()
-        config.update(self.data_config().to_dict(primary_type))
-        config = prune(config)
-        if not include_data:
-            del config["owidDataset"]["data"]
-        return config
-
-    def data_config(self) -> "DataConfig":
         if not self.x or not self.y:
             raise ValueError("must provide an x and y encoding")
-        return DataConfig.from_data(
-            self.data,
-            x=self.x,
-            y=self.y,
-            entity=self.entity,
-            color=self.color,
-            size=self.size,
-            time_type=self.time_type,
-            chart_type=self._get_primary_chart_type(),
-            selection=self.selection,
-            timespan=self.timespan,
-            x_unit=self.x_unit,
-            y_unit=self.y_unit,
-            variable_configs=self.variable_configs,
+
+        df = self.data.copy()
+        x_col = self.x
+        y_col = self.y
+        entity_col = self.entity
+        color_col = self.color
+        size_col = self.size
+        chart_type = self._get_primary_chart_type()
+
+        # Sanitize column names (special characters break OWID's slug format)
+        rename_map = {
+            col: _sanitize_slug(col)
+            for col in df.columns
+            if _UNSAFE_SLUG_CHARS.search(col)
+        }
+        if rename_map:
+            df = df.rename(columns=rename_map)
+            if x_col in rename_map:
+                x_col = rename_map[x_col]
+            if y_col in rename_map:
+                y_col = rename_map[y_col]
+            if entity_col and entity_col in rename_map:
+                entity_col = rename_map[entity_col]
+            if color_col and color_col in rename_map:
+                color_col = rename_map[color_col]
+            if size_col and size_col in rename_map:
+                size_col = rename_map[size_col]
+
+        # Determine column mappings based on chart type
+        year_col: Optional[str] = None
+        y_cols: List[str]
+        selected_entities: List[str]
+
+        if chart_type == "ScatterPlot":
+            y_cols = [x_col, y_col]  # Both are "value" columns for scatter
+            if self.selection is None:
+                selected_entities = []  # Don't auto-select for scatter plots
+            else:
+                selected_entities = self.selection
+            if "year" in df.columns:
+                year_col = "year"
+        elif chart_type in ("DiscreteBar", "StackedDiscreteBar"):
+            if entity_col:
+                y_cols = [y_col]
+                if self.selection is None:
+                    selected_entities = list(df[entity_col].unique())
+                else:
+                    selected_entities = self.selection
+            else:
+                # Fall back to y as entity, x as value (horizontal bars)
+                entity_col = y_col
+                y_cols = [x_col]
+                if self.selection is None:
+                    selected_entities = list(df[y_col].unique())
+                else:
+                    selected_entities = self.selection
+        else:
+            # Line charts: x is time, y is value, entity is grouping
+            y_cols = [y_col]
+            if self.selection is None:
+                if entity_col:
+                    selected_entities = list(df[entity_col].unique())
+                else:
+                    selected_entities = [y_col]  # Use column name as entity
+            else:
+                selected_entities = self.selection
+
+        # Handle timespan
+        min_time: Optional[Any] = None
+        max_time: Optional[int] = None
+        if self.timespan:
+            timespan = self.timespan
+            if self.time_type == TimeType.DAY:
+                timespan = _timespan_from_date(timespan)
+            min_time, max_time = timespan
+
+        # For scatter plots, default to 'latest'
+        if chart_type == "ScatterPlot" and min_time is None:
+            min_time = "latest"
+
+        # Rename entity column to entityName for OwidTable
+        if entity_col and entity_col in df.columns:
+            df = df.rename(columns={entity_col: "entityName"})
+
+        # Rename x column to expected time column name for OwidTable
+        if chart_type not in ("ScatterPlot", "DiscreteBar", "StackedDiscreteBar"):
+            expected_time_col = "date" if self.time_type == TimeType.DAY else "year"
+            if x_col != expected_time_col and x_col in df.columns:
+                df = df.rename(columns={x_col: expected_time_col})
+
+        return (
+            df,
+            x_col,
+            y_cols,
+            entity_col,
+            color_col,
+            year_col,
+            selected_entities,
+            min_time,
+            max_time,
         )
+
+    def _build_csv(self, df: pd.DataFrame) -> str:
+        """Build CSV string from prepared dataframe."""
+        return df.to_csv(index=False)
+
+    def _build_column_defs(
+        self, y_cols: List[str], x_col: str, year_col: Optional[str]
+    ) -> List[Dict[str, Any]]:
+        """Build column definitions for OwidTable."""
+        chart_type = self._get_primary_chart_type()
+        display = DATE_DISPLAY if self.time_type == TimeType.DAY else {}
+
+        column_defs: List[Dict[str, Any]] = []
+        for col in y_cols:
+            col_display = display.copy()
+
+            # Apply units based on chart type
+            if chart_type == "ScatterPlot":
+                if col == y_cols[0] and self.x_unit:
+                    col_display["unit"] = self.x_unit
+                elif col == y_cols[1] and self.y_unit:
+                    col_display["unit"] = self.y_unit
+            else:
+                if self.y_unit:
+                    col_display["unit"] = self.y_unit
+
+            col_def: Dict[str, Any] = {"slug": col, "type": "Numeric"}
+            if col_display:
+                col_def["display"] = col_display
+
+            # Add rich metadata from variable_configs if available
+            if col in self.variable_configs:
+                var_config = self.variable_configs[col]
+                var_dict = var_config.to_dict()  # type: ignore
+                col_def.update(var_dict)
+
+                # Auto-compute timespan from the time column
+                time_col = year_col if chart_type == "ScatterPlot" else x_col
+                if time_col and time_col in self.data.columns:
+                    min_val = self.data[time_col].min()
+                    max_val = self.data[time_col].max()
+                    if min_val == max_val:
+                        col_def["timespan"] = str(min_val)
+                    else:
+                        col_def["timespan"] = f"{min_val}–{max_val}"
+
+            column_defs.append(col_def)
+
+        return column_defs
+
+    def _build_grapher_config(
+        self,
+        y_cols: List[str],
+        x_col: str,
+        color_col: Optional[str],
+        selected_entities: List[str],
+        min_time: Optional[Any],
+        max_time: Optional[int],
+    ) -> Dict[str, Any]:
+        """Build GrapherState configuration dict."""
+        chart_types = self.chart_types if self.chart_types else ["LineChart"]
+        chart_type = self._get_primary_chart_type()
+        is_scatter = chart_type == "ScatterPlot"
+
+        grapher_config: Dict[str, Any] = {
+            "hideLogo": self.config.hide_logo,
+            "selectedEntityNames": selected_entities,
+            "chartTypes": chart_types,
+        }
+
+        # Set tab
+        if self.default_tab:
+            grapher_config["tab"] = self.default_tab
+        elif chart_types:
+            grapher_config["tab"] = _CHART_TYPE_TO_TAB.get(chart_types[0], "line")
+
+        # Set column slugs based on chart type
+        if is_scatter:
+            grapher_config["ySlugs"] = y_cols[1]  # y-axis value
+            grapher_config["xSlug"] = y_cols[0]  # x-axis value
+        else:
+            grapher_config["ySlugs"] = " ".join(y_cols)
+
+        # Title and text
+        if self.config.title:
+            grapher_config["title"] = self.config.title
+        if self.config.subtitle:
+            grapher_config["subtitle"] = self.config.subtitle
+        if self.config.note:
+            grapher_config["note"] = self.config.note
+        if self.config.source_desc:
+            grapher_config["sourceDesc"] = self.config.source_desc
+
+        # Map tab
+        if self.config.has_map_tab:
+            grapher_config["hasMapTab"] = True
+
+        # Stack mode
+        if self.config.stack_mode != "absolute":
+            grapher_config["stackMode"] = self.config.stack_mode
+
+        # Time bounds
+        if min_time is not None:
+            grapher_config["minTime"] = min_time
+        if max_time is not None:
+            grapher_config["maxTime"] = max_time
+
+        # Axis configuration
+        if self.config.x_axis:
+            grapher_config["xAxis"] = self.config.x_axis
+        if self.config.y_axis:
+            grapher_config["yAxis"] = self.config.y_axis
+
+        # Additional slugs
+        if self.size:
+            grapher_config["sizeSlug"] = self.size
+        if color_col:
+            grapher_config["colorSlug"] = color_col
+
+        # Hide toggles
+        if self.config.hide_relative_toggle:
+            grapher_config["hideRelativeToggle"] = True
+        if self.config.hide_entity_controls:
+            grapher_config["hideEntityControls"] = True
+        if self.config.matching_entities_only:
+            grapher_config["matchingEntitiesOnly"] = True
+
+        # Map configuration
+        if self.config.map_config is not None:
+            map_config = self.config.map_config.to_dict()
+            # Auto-set columnSlug from the first y column if not specified
+            if "columnSlug" not in map_config and y_cols:
+                map_config["columnSlug"] = y_cols[0]
+            grapher_config["map"] = map_config
+
+        return grapher_config
+
+    def export(self) -> Dict[str, Any]:
+        """Export the chart as the three components needed for rendering.
+
+        Returns:
+            Dictionary with keys:
+                - csv_data: CSV string of the data
+                - column_defs: List of column definition dicts for OwidTable
+                - grapher_config: Dict of GrapherState configuration
+        """
+        (
+            df,
+            x_col,
+            y_cols,
+            entity_col,
+            color_col,
+            year_col,
+            selected_entities,
+            min_time,
+            max_time,
+        ) = self._prepare_data()
+
+        return {
+            "csv_data": self._build_csv(df),
+            "column_defs": self._build_column_defs(y_cols, x_col, year_col),
+            "grapher_config": self._build_grapher_config(
+                y_cols, x_col, color_col, selected_entities, min_time, max_time
+            ),
+        }
 
 
 class TimeType(Enum):
@@ -780,421 +1014,26 @@ class VariableConfig:
     source_link: Optional[str] = None
 
 
-@dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
-@dataclass
-class Dimension:
-    """Maps a DataFrame column to a chart dimension.
+def generate_iframe(
+    csv_data: str, column_defs: List[Dict[str, Any]], grapher_config: Dict[str, Any]
+) -> str:
+    """Generate an iframe HTML for rendering the chart.
 
-    Dimensions define how data columns are used in the chart visualization. Each
-    dimension specifies a visual property (x, y, color) and the source column name,
-    along with optional display settings.
+    Args:
+        csv_data: CSV string of the data
+        column_defs: List of column definition dicts for OwidTable
+        grapher_config: Dict of GrapherState configuration
 
-    Attributes:
-        property: The visual property this dimension controls ('y' for y-axis, 'x' for x-axis,
-            'color' for color encoding).
-        variable_name: Name of the column from the DataFrame to use for this dimension.
-        display: Optional dictionary of display settings (e.g., {'unit': '$', 'numDecimalPlaces': 2}).
-
-    Example:
-        ```python
-        Dimension(
-            property="y",
-            variable_name="population",
-            display={"unit": "people", "numDecimalPlaces": 0}
-        )
-        ```
+    Returns:
+        HTML string containing the iframe and initialization script
     """
-
-    property: Literal["y", "x", "color"]
-    variable_name: str
-    display: Optional[dict] = field(default_factory=dict)
-
-
-@dataclass
-class DataConfig:
-    """Stores data and column mappings for chart rendering.
-
-    Internal class that handles the conversion between pandas DataFrame structure and
-    OWID Grapher's expected data format. This class manages column mappings, entity
-    selection, time ranges, and chart-type-specific data transformations.
-
-    Attributes:
-        df: Source pandas DataFrame containing the data.
-        x_col: Column name for x-axis (time for line charts, value for bar/scatter).
-        y_cols: List of column names for y-axis values.
-        entity_col: Column name for entity/grouping (e.g., 'country').
-        year_col: Column name for year dimension (used in scatter plots with time).
-        color_col: Column name for color encoding (scatter plots).
-        size_col: Column name for size encoding (scatter plots).
-        time_type: Whether time is yearly (YEAR) or daily (DAY).
-        chart_type: Type of chart being created.
-        selected_entity_names: List of entity names to display by default.
-        min_time: Minimum time value for chart range (or 'latest' for scatter).
-        max_time: Maximum time value for chart range.
-        x_unit: Unit label for x-axis values (e.g., '$', 'kg').
-        y_unit: Unit label for y-axis values.
-        variable_configs: Rich metadata for columns (from Chart.variable()).
-    """
-
-    df: pd.DataFrame
-    x_col: str  # Time column (or x-axis for scatter)
-    y_cols: List[str]  # Value column(s)
-    entity_col: Optional[str]  # Entity/grouping column
-    year_col: Optional[str]  # Year column (for scatter plots with time)
-    color_col: Optional[str]  # Color column (for scatter plots, maps to colorSlug)
-    size_col: Optional[str]  # Size column (for scatter plots)
-    time_type: TimeType
-    chart_type: ChartType
-    selected_entity_names: List[str]
-    min_time: Optional[Any] = None
-    max_time: Optional[int] = None
-    x_unit: Optional[str] = None  # Unit for x-axis variable
-    y_unit: Optional[str] = None  # Unit for y-axis variable
-    variable_configs: Dict[str, VariableConfig] = field(default_factory=dict)
-
-    @classmethod
-    def from_data(
-        cls,
-        df: pd.DataFrame,
-        x: str,
-        y: str,
-        entity: Optional[str] = None,
-        color: Optional[str] = None,
-        size: Optional[str] = None,
-        time_type: "TimeType" = TimeType.YEAR,
-        chart_type: ChartType = "LineChart",
-        selection: Optional[List[str]] = None,
-        timespan: Optional[Tuple[Any, Any]] = None,
-        x_unit: Optional[str] = None,
-        y_unit: Optional[str] = None,
-        variable_configs: Optional[Dict[str, "VariableConfig"]] = None,
-    ) -> "DataConfig":
-        df = df.copy()
-
-        # Sanitize column names (special characters break OWID's slug format)
-        # Build rename map for columns that need sanitizing
-        rename_map = {
-            col: _sanitize_slug(col)
-            for col in df.columns
-            if _UNSAFE_SLUG_CHARS.search(col)
-        }
-        if rename_map:
-            df = df.rename(columns=rename_map)
-            # Update column references to use sanitized names
-            if x in rename_map:
-                x = rename_map[x]
-            if y in rename_map:
-                y = rename_map[y]
-            if entity and entity in rename_map:
-                entity = rename_map[entity]
-            if color and color in rename_map:
-                color = rename_map[color]
-            if size and size in rename_map:
-                size = rename_map[size]
-
-        year_col: Optional[str] = None
-        color_col: Optional[str] = None
-
-        # Determine entity column and selection
-        if chart_type == "ScatterPlot":
-            # For scatter: x and y are both value columns, entity is grouping
-            entity_col = entity
-            y_cols = [x, y]  # Both are "value" columns for scatter
-            color_col = color  # Optional color encoding for scatter
-            # Don't auto-select all entities for scatter plots - let grapher handle it
-            if selection is None:
-                selection = []
-            # Check if dataframe has a year column
-            if "year" in df.columns:
-                year_col = "year"
-        elif chart_type in ("DiscreteBar", "StackedDiscreteBar"):
-            # For bar charts: if entity is explicitly provided, use it
-            # Otherwise fall back to y as entity, x as value (horizontal bars)
-            if entity:
-                entity_col = entity
-                y_cols = [y]
-                if selection is None:
-                    selection = list(df[entity].unique())
-            else:
-                entity_col = y
-                y_cols = [x]
-                if selection is None:
-                    selection = list(df[y].unique())
-        else:
-            # For line charts: x is time, y is value, entity is grouping
-            entity_col = entity
-            y_cols = [y]
-            if selection is None:
-                if entity:
-                    selection = list(df[entity].unique())
-                else:
-                    selection = [y]  # Use column name as entity
-
-        # Handle timespan
-        min_time, max_time = None, None
-        if timespan:
-            if time_type == TimeType.DAY:
-                timespan = _timespan_from_date(timespan)
-            min_time, max_time = timespan
-
-        # For scatter plots, always use 'latest'
-        if chart_type == "ScatterPlot" and min_time is None:
-            min_time = "latest"
-
-        return DataConfig(
-            df=df,
-            x_col=x,
-            y_cols=y_cols,
-            entity_col=entity_col,
-            year_col=year_col,
-            color_col=color_col,
-            size_col=size,
-            time_type=time_type,
-            chart_type=chart_type,
-            selected_entity_names=selection,
-            min_time=min_time,
-            max_time=max_time,
-            x_unit=x_unit,
-            y_unit=y_unit,
-            variable_configs=variable_configs or {},
-        )
-
-    def _get_dimensions(self) -> List[Dimension]:
-        """Build dimension list based on chart type."""
-        if self.chart_type == "ScatterPlot":
-            # For scatter: y_cols[0] is x-axis, y_cols[1] is y-axis
-            return [
-                Dimension(property="y", variable_name=self.y_cols[1]),
-                Dimension(property="x", variable_name=self.y_cols[0]),
-            ]
-        else:
-            # For other charts: one dimension per y column
-            return [Dimension(property="y", variable_name=col) for col in self.y_cols]
-
-    def _get_time_column(self) -> Optional[str]:
-        """Get the time column name based on chart type."""
-        if self.chart_type == "ScatterPlot":
-            return self.year_col  # May be None for scatter plots without time
-        else:
-            return self.x_col
-
-    def to_dict(self, chart_type: ChartType) -> Dict[Any, Any]:
-        display = DATE_DISPLAY if self.time_type == TimeType.DAY else {}
-
-        # Build metadata for columns
-        metadata: Dict[str, Any] = {}
-        for col in self.y_cols:
-            col_display = display.copy()
-            # For scatter plots: y_cols[0] is x-axis, y_cols[1] is y-axis
-            if chart_type == "ScatterPlot":
-                if col == self.y_cols[0] and self.x_unit:
-                    col_display["unit"] = self.x_unit
-                elif col == self.y_cols[1] and self.y_unit:
-                    col_display["unit"] = self.y_unit
-            else:
-                # For other charts, apply y_unit to all y columns
-                if self.y_unit:
-                    col_display["unit"] = self.y_unit
-
-            col_metadata: Dict[str, Any] = {
-                "display": col_display if col_display else {}
-            }
-
-            # Add rich metadata from variable_configs if available
-            if col in self.variable_configs:
-                var_config = self.variable_configs[col]
-                # Convert to dict and use camelCase keys for JS
-                var_dict = var_config.to_dict()  # type: ignore
-                col_metadata.update(var_dict)
-
-                # Auto-compute timespan from the time column
-                time_col = self._get_time_column()
-                if time_col and time_col in self.df.columns:
-                    min_val = self.df[time_col].min()
-                    max_val = self.df[time_col].max()
-                    if min_val == max_val:
-                        col_metadata["timespan"] = str(min_val)
-                    else:
-                        col_metadata["timespan"] = f"{min_val}–{max_val}"
-
-            metadata[col] = col_metadata
-
-        # Rename entity column to entityName for OwidTable
-        df = self.df.copy()
-        if self.entity_col and self.entity_col in df.columns:
-            df = df.rename(columns={self.entity_col: "entityName"})
-
-        # Rename x column to expected time column name for OwidTable
-        # (OwidTable expects 'year' or 'date', not arbitrary column names)
-        if chart_type not in ("ScatterPlot", "DiscreteBar", "StackedDiscreteBar"):
-            expected_time_col = "date" if self.time_type == TimeType.DAY else "year"
-            if self.x_col != expected_time_col and self.x_col in df.columns:
-                df = df.rename(columns={self.x_col: expected_time_col})
-
-        doc: Dict[str, Any] = {
-            "selectedEntityNames": self.selected_entity_names,
-            "owidDataset": {
-                "data": df.to_dict(orient="list"),
-                "metadata": metadata,
-            },
-            "dimensions": [d.to_dict() for d in self._get_dimensions()],  # type: ignore
-            # Note: chartTypes is set by Chart.export(), not here
-        }
-
-        if self.min_time is not None:
-            doc["minTime"] = self.min_time
-        if self.max_time is not None:
-            doc["maxTime"] = self.max_time
-        if self.size_col is not None:
-            doc["sizeSlug"] = self.size_col
-        if self.color_col is not None:
-            doc["colorSlug"] = self.color_col
-
-        return doc
-
-
-def _build_column_defs(config: Dict[str, Any]) -> str:
-    """Build columnDefs array from metadata for OwidTable constructor."""
-    owid_dataset = config.get("owidDataset", {})
-    metadata = owid_dataset.get("metadata", {})
-
-    column_defs = []
-    for col_name, col_metadata in metadata.items():
-        col_def: Dict[str, Any] = {"slug": col_name, "type": "Numeric"}
-
-        # Extract display settings if present
-        display = col_metadata.get("display", {})
-        if display:
-            col_def["display"] = display
-
-        # Extract rich metadata fields from VariableConfig
-        for field_name in [
-            "name",
-            "descriptionShort",
-            "descriptionFromProducer",
-            "descriptionProcessing",
-            "descriptionKey",
-            "unit",
-            "shortUnit",
-            "sourceName",
-            "sourceLink",
-            "timespan",
-        ]:
-            if field_name in col_metadata and col_metadata[field_name] is not None:
-                col_def[field_name] = col_metadata[field_name]
-
-        column_defs.append(col_def)
-
-    # Return as JSON string for embedding in JavaScript
-    return json.dumps(column_defs)
-
-
-def _config_to_grapher(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Build GrapherState config from the export config."""
-    dimensions = config.get("dimensions", [])
-    chart_types = config.get("chartTypes", [])
-    is_scatter = "ScatterPlot" in chart_types
-
-    grapher_config: Dict[str, Any] = {
-        "hideLogo": config.get("hideLogo", True),
-        "selectedEntityNames": config.get("selectedEntityNames", []),
-    }
-
-    # Use chartTypes directly from config
-    if config.get("chartTypes"):
-        grapher_config["chartTypes"] = config["chartTypes"]
-
-    # For scatter plots, separate x and y slugs
-    if is_scatter:
-        y_var_names = []
-        x_var_name = None
-
-        for dim in dimensions:
-            var_name = dim.get("variableName")
-            if var_name:
-                if dim.get("property") == "y":
-                    y_var_names.append(var_name)
-                elif dim.get("property") == "x":
-                    x_var_name = var_name
-
-        if y_var_names:
-            grapher_config["ySlugs"] = " ".join(y_var_names)
-        if x_var_name:
-            grapher_config["xSlug"] = x_var_name
-    else:
-        # For non-scatter plots, collect variable names from dimensions as ySlugs
-        y_slugs = [
-            dim.get("variableName") for dim in dimensions if dim.get("variableName")
-        ]
-        if y_slugs:
-            grapher_config["ySlugs"] = " ".join(y_slugs)
-
-    # Pass through common fields
-    for field_name in [
-        "title",
-        "subtitle",
-        "note",
-        "sourceDesc",
-        "hasMapTab",
-        "tab",
-        "stackMode",
-        "minTime",
-        "maxTime",
-        "xAxis",
-        "yAxis",
-        "sizeSlug",
-        "colorSlug",
-    ]:
-        if config.get(field_name):
-            grapher_config[field_name] = config[field_name]
-
-    # Pass through hide toggles and boolean flags
-    for field_name in [
-        "hideRelativeToggle",
-        "hideEntityControls",
-        "matchingEntitiesOnly",
-    ]:
-        if field_name in config:
-            grapher_config[field_name] = config[field_name]
-
-    # Handle map config - auto-set columnSlug from y dimension
-    map_config_raw = config.get("mapConfig")
-    if map_config_raw is not None:
-        # MapConfig object - use to_dict()
-        if isinstance(map_config_raw, MapConfig):
-            map_config = map_config_raw.to_dict()
-        else:
-            map_config = map_config_raw.copy()
-
-        # Auto-set columnSlug from the first y dimension if not specified
-        if "columnSlug" not in map_config:
-            y_slugs = [
-                dim.get("variableName")
-                for dim in dimensions
-                if dim.get("property") == "y" and dim.get("variableName")
-            ]
-            if y_slugs:
-                map_config["columnSlug"] = y_slugs[0]
-        grapher_config["map"] = map_config
-
-    return grapher_config
-
-
-def generate_iframe(config: Dict[str, Any]) -> str:
     iframe_name = "".join(random.choice(string.ascii_lowercase) for _ in range(20))
-
-    # Extract data for CSV and prepare config for GrapherState API
-    csv_data = _config_to_csv(config)
-
-    # Build column definitions from metadata
-    column_defs = _build_column_defs(config)
-
-    # Build grapher config from the config dict
-    grapher_config = _config_to_grapher(config)
 
     # Hide sources section if no sourceDesc provided
     hide_sources_css = (
-        ".sources { display: none !important; }" if not config.get("sourceDesc") else ""
+        ".sources { display: none !important; }"
+        if not grapher_config.get("sourceDesc")
+        else ""
     )
 
     iframe_contents = f"""
@@ -1234,7 +1073,7 @@ def generate_iframe(config: Dict[str, Any]) -> str:
       }}
 
       const csvData = `{csv_data}`;
-      const columnDefs = {column_defs};
+      const columnDefs = {json.dumps(column_defs)};
       const table = new OwidTable(csvData, columnDefs);
 
       const grapherState = new GrapherState({{
@@ -1271,25 +1110,6 @@ def generate_iframe(config: Dict[str, Any]) -> str:
             }});
         </script>
     """  # noqa
-
-
-def _config_to_csv(config: Dict[str, Any]) -> str:
-    """Convert the owidDataset format to CSV for OwidTable."""
-    owid_dataset = config.get("owidDataset", {})
-    data = owid_dataset.get("data", {})
-
-    if not data:
-        return ""
-
-    # Convert dict of lists back to dataframe and then to CSV
-    df = pd.DataFrame(data)
-    return df.to_csv(index=False)
-
-
-def prune(d: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        k: prune(v) if isinstance(v, dict) else v for k, v in d.items() if v is not None
-    }
 
 
 def _timespan_from_date(timespan: Tuple[str, str]) -> Tuple[int, int]:
