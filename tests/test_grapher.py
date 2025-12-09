@@ -49,6 +49,99 @@ def test_json_export():
     assert "population" in export["owidDataset"]["metadata"]
 
 
+def test_custom_time_column_name():
+    """Test that custom time column names are renamed to 'year' for OwidTable."""
+    df = pd.DataFrame(
+        {
+            "years": [2000, 2005, 2010, 2015, 2020] * 3,
+            "country": ["Australia"] * 5 + ["New Zealand"] * 5 + ["Japan"] * 5,
+            "population": [
+                19.2,
+                20.4,
+                22.0,
+                23.8,
+                25.7,
+                3.9,
+                4.1,
+                4.4,
+                4.6,
+                5.1,
+                126.8,
+                127.8,
+                128.1,
+                127.1,
+                125.8,
+            ],
+        }
+    )
+    ch = gr.Chart(df).mark_line().encode(x="years", y="population", entity="country")
+    export = ch.export()
+
+    # The 'years' column should be renamed to 'year' in the export
+    data = export["owidDataset"]["data"]
+    assert "year" in data, "Time column should be renamed to 'year'"
+    assert "years" not in data, "Original column name should not be present"
+    assert data["year"] == [2000, 2005, 2010, 2015, 2020] * 3
+
+
+def test_column_names_with_spaces():
+    """Test that column names with spaces are sanitized (spaces break OWID's slug format)."""
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2005, 2010, 2015, 2020] * 3,
+            "country": ["Australia"] * 5 + ["New Zealand"] * 5 + ["Japan"] * 5,
+            "population X": [
+                19.2,
+                20.4,
+                22.0,
+                23.8,
+                25.7,
+                3.9,
+                4.1,
+                4.4,
+                4.6,
+                5.1,
+                126.8,
+                127.8,
+                128.1,
+                127.1,
+                125.8,
+            ],
+        }
+    )
+    ch = gr.Chart(df).mark_line().encode(x="year", y="population X", entity="country")
+    export = ch.export()
+
+    # The 'population X' column should be sanitized to 'population_X'
+    data = export["owidDataset"]["data"]
+    assert "population_X" in data, "Column with space should be sanitized"
+    assert "population X" not in data, "Original column name should not be present"
+
+    # Check dimensions use sanitized name
+    dims = export["dimensions"]
+    assert dims[0]["variableName"] == "population_X"
+
+
+def test_column_names_with_special_characters():
+    """Test that column names with special characters are sanitized."""
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010, 2020],
+            "GDP (current $)": [1000, 2000, 3000],
+            "country": ["USA"] * 3,
+        }
+    )
+    ch = (
+        gr.Chart(df).mark_line().encode(x="year", y="GDP (current $)", entity="country")
+    )
+    export = ch.export()
+
+    # Special characters should be replaced with underscores
+    data = export["owidDataset"]["data"]
+    assert "GDP__current___" in data, "Column with special chars should be sanitized"
+    assert "GDP (current $)" not in data, "Original column name should not be present"
+
+
 def test_scatter_plot_export():
     df = pd.DataFrame(
         {

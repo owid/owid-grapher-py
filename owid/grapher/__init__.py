@@ -7,6 +7,7 @@
 import datetime as dt
 import json
 import random
+import re
 import string
 from dataclasses import dataclass, field
 from enum import Enum
@@ -16,7 +17,27 @@ import pandas as pd
 from dataclasses_json import LetterCase, dataclass_json
 from dateutil.parser import parse
 
+from owid.grapher.grapher_state import (  # noqa: F401 - re-exported for public API
+    BinningStrategy,
+    ColorScaleConfig,
+    ColorSchemeName,
+    GrapherState,
+    MapConfig,
+)
+
 DATE_DISPLAY = {"yearIsDay": True, "zeroDay": "1970-01-01"}
+
+# Characters that are safe in OWID slugs (alphanumeric, underscore, hyphen)
+_UNSAFE_SLUG_CHARS = re.compile(r"[^a-zA-Z0-9_\-]")
+
+
+def _sanitize_slug(name: str) -> str:
+    """Sanitize a column name for use as a slug.
+
+    OWID uses space-separated slug strings, so spaces and other special characters
+    must be replaced. Only alphanumeric characters, underscores, and hyphens are kept.
+    """
+    return _UNSAFE_SLUG_CHARS.sub("_", name)
 
 
 class Chart:
@@ -337,6 +358,41 @@ class Chart:
 
         return self
 
+    def map(
+        self,
+        time: Optional[int] = None,
+        time_tolerance: Optional[int] = None,
+        color_scheme: Optional[ColorSchemeName] = None,
+        binning_strategy: Optional[BinningStrategy] = None,
+        custom_numeric_values: Optional[List[float]] = None,
+    ) -> "Chart":
+        """Configure the map tab.
+
+        Args:
+            time: The year to display on the map (e.g., 2010)
+            time_tolerance: How many years to look back/forward for data
+            color_scheme: Color scheme name (e.g., "OrRd", "BuGn", "YlOrRd")
+            binning_strategy: How to bin values ("auto", "manual", "equalInterval", "quantiles")
+            custom_numeric_values: Custom bin boundaries when using manual binning
+        """
+        self.config.has_map_tab = True
+
+        color_scale = ColorScaleConfig(
+            baseColorScheme=color_scheme,
+            binningStrategy=binning_strategy,
+            customNumericValues=custom_numeric_values,
+        )
+
+        self.config.map_config = MapConfig(
+            time=time,
+            timeTolerance=time_tolerance,
+            colorScale=color_scale
+            if any([color_scheme, binning_strategy, custom_numeric_values])
+            else None,
+        )
+
+        return self
+
     def select(
         self,
         entities: Optional[List[str]] = None,
@@ -411,6 +467,11 @@ class Chart:
         """
         self.config.auto_improve()
         config = self.config.to_dict()  # type: ignore
+
+        # Convert MapConfig to dict (dataclass_json doesn't handle it automatically)
+        if self.config.map_config is not None:
+            config["mapConfig"] = self.config.map_config.to_dict()
+
         config.update(self.data_config().to_dict(self.config.type))
         config = prune(config)
         if not include_data:
@@ -504,6 +565,7 @@ class ChartConfig:
     hide_entity_controls: bool = True
     hide_relative_toggle: bool = True
     has_map_tab: bool = False
+    map_config: Optional[MapConfig] = None
     stack_mode: Literal["relative", "absolute"] = "absolute"
     matching_entities_only: bool = False
     x_axis: dict = field(default_factory=dict)
@@ -602,6 +664,27 @@ class DataConfig:
     ) -> "DataConfig":
         df = df.copy()
 
+        # Sanitize column names (special characters break OWID's slug format)
+        # Build rename map for columns that need sanitizing
+        rename_map = {
+            col: _sanitize_slug(col)
+            for col in df.columns
+            if _UNSAFE_SLUG_CHARS.search(col)
+        }
+        if rename_map:
+            df = df.rename(columns=rename_map)
+            # Update column references to use sanitized names
+            if x in rename_map:
+                x = rename_map[x]
+            if y in rename_map:
+                y = rename_map[y]
+            if entity and entity in rename_map:
+                entity = rename_map[entity]
+            if color and color in rename_map:
+                color = rename_map[color]
+            if size and size in rename_map:
+                size = rename_map[size]
+
         year_col: Optional[str] = None
         color_col: Optional[str] = None
 
@@ -696,6 +779,13 @@ class DataConfig:
         df = self.df.copy()
         if self.entity_col and self.entity_col in df.columns:
             df = df.rename(columns={self.entity_col: "entityName"})
+
+        # Rename x column to expected time column name for OwidTable
+        # (OwidTable expects 'year' or 'date', not arbitrary column names)
+        if chart_type not in ("ScatterPlot", "DiscreteBar", "StackedDiscreteBar"):
+            expected_time_col = "date" if self.time_type == TimeType.DAY else "year"
+            if self.x_col != expected_time_col and self.x_col in df.columns:
+                df = df.rename(columns={self.x_col: expected_time_col})
 
         doc: Dict[str, Any] = {
             "selectedEntityNames": self.selected_entity_names,
@@ -807,6 +897,26 @@ def _config_to_grapher(config: Dict[str, Any]) -> Dict[str, Any]:
         if field_name in config:
             grapher_config[field_name] = config[field_name]
 
+    # Handle map config - auto-set columnSlug from y dimension
+    map_config_raw = config.get("mapConfig")
+    if map_config_raw is not None:
+        # MapConfig object - use to_dict()
+        if isinstance(map_config_raw, MapConfig):
+            map_config = map_config_raw.to_dict()
+        else:
+            map_config = map_config_raw.copy()
+
+        # Auto-set columnSlug from the first y dimension if not specified
+        if "columnSlug" not in map_config:
+            y_slugs = [
+                dim.get("variableName")
+                for dim in dimensions
+                if dim.get("property") == "y" and dim.get("variableName")
+            ]
+            if y_slugs:
+                map_config["columnSlug"] = y_slugs[0]
+        grapher_config["map"] = map_config
+
     return grapher_config
 
 
@@ -821,6 +931,11 @@ def generate_iframe(config: Dict[str, Any]) -> str:
 
     # Build grapher config from the config dict
     grapher_config = _config_to_grapher(config)
+
+    # Hide sources section if no sourceDesc provided
+    hide_sources_css = (
+        ".sources { display: none !important; }" if not config.get("sourceDesc") else ""
+    )
 
     iframe_contents = f"""
 <!DOCTYPE html>
@@ -840,10 +955,8 @@ def generate_iframe(config: Dict[str, Any]) -> str:
       figure {{ width: 100%; height: 100%; margin: 0; }}
       .error {{ color: red; padding: 20px; background: #fee; border-radius: 5px; }}
       /* Hide UI elements for cleaner notebook display */
-      .grapher-share-button, .shareMenuOuter, .GrapherShareMenu,
-      a[data-track-note="chart_click_explore"], .exploreDataButton,
-      .originUrl, .SourcesFooter, .SourcesFooterHTML,
-      .GrapherFooter__sourcesAndLicense {{ display: none !important; }}
+      .ActionButtons, .learn-more-about-data {{ display: none !important; }}
+      {hide_sources_css}
     </style>
   </head>
   <body>
