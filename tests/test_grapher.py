@@ -37,7 +37,7 @@ def test_json_export():
     )
     export = ch.export()
     assert export["title"] == "Too many Koalas?"
-    assert export["type"] == "LineChart"
+    assert export["chartTypes"] == ["LineChart"]
     assert export["selectedEntityNames"] == ["population"]
 
     # Check owidDataset structure - data is just the dataframe as dict
@@ -160,7 +160,7 @@ def test_scatter_plot_export():
 
     # Check key fields
     assert config["title"] == "Life expectancy vs. GDP"
-    assert config["type"] == "ScatterPlot"
+    assert config["chartTypes"] == ["ScatterPlot"]
     assert config["selectedEntityNames"] == []  # Scatter plots don't auto-select
     assert config["minTime"] == "latest"
 

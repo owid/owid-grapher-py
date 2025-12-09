@@ -31,7 +31,7 @@ def test_translate_line_chart_no_frills():
     expected = """
 grapher.Chart(
     data
-).encode(
+).mark_line().encode(
     x="year",
     y="value"
 ).interact(
@@ -60,13 +60,12 @@ def test_translate_line_chart_date():
     expected = """
 grapher.Chart(
     data
-).encode(
+).mark_line().encode(
     x="date",
     y="value"
 ).interact(
     entity_control=True
 )
-
 """.strip()
     assert py == expected
 
@@ -94,7 +93,7 @@ def test_translate_labels():
     expected = """
 grapher.Chart(
     data
-).encode(
+).mark_line().encode(
     x="year",
     y="value"
 ).label(

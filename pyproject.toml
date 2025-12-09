@@ -58,6 +58,8 @@ dev-dependencies = [
     "ipykernel>=6.31.0",
     "zensical>=0.0.11",
     "mkdocstrings[python]>=0.24.0",
+    "jupyter>=1.1.1",
+    "nbconvert>=7.16.6",
 ]
 
 [tool.ruff]
