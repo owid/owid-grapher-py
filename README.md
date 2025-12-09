@@ -21,7 +21,7 @@ pip install owid-grapher-py
 
 ## Quick Start
 
-See the [quickstart notebook](examples/quickstart.ipynb) for a comprehensive walkthrough with examples.
+See the [quickstart notebook in Colab](https://colab.research.google.com/github/owid/owid-grapher-py/blob/master/examples/quickstart.ipynb) for a comprehensive walkthrough with examples.
 
 Get your data into a tidy data frame, then wrap it in a chart object and explain what marks you want and how to encode the dimensions you have (inspired by Altair).
 
@@ -110,6 +110,17 @@ Chart(df).mark_line().encode(
     y='population',
     entity='country'
 ).interact(enable_map=True)
+
+# Configure map with color scheme and binning
+Chart(df).mark_line().encode(
+    x='year',
+    y='population',
+    entity='country'
+).map(
+    time=2020,                    # Year to display
+    color_scheme='OrRd',          # Color scheme (e.g., 'OrRd', 'BuGn', 'YlOrRd')
+    binning_strategy='quantiles'  # How to bin values ('auto', 'manual', 'equalInterval', 'quantiles')
+)
 ```
 
 ## Labels
@@ -283,6 +294,7 @@ Enable `grapher.Chart()` to support more chart types:
 - [x] Axis labels and units
 - [x] Log/linear scale controls
 - [x] Entity filtering (matching_entities_only)
+- [x] Map configuration (color schemes, binning strategies)
 - [ ] Axis bounds (min/max values)
 - [ ] Line charts without a time axis
 
@@ -295,6 +307,9 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.2.3`
+    - Add `map()` method for configuring map tab with color schemes and binning strategies
+    - Add `source_desc` support with automatic CSS hiding when empty
 - `0.2.2`
     - Fix quickstart notebook to handle autoreload gracefully in Google Colab
 - `0.2.1`
