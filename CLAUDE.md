@@ -161,3 +161,8 @@ The package is published to PyPI via GitHub Actions. To release:
 1. Bump version in `pyproject.toml`
 2. Update changelog in `README.md`
 3. Push to master - the workflow auto-publishes if version changed
+
+## Notebooks & Data Analysis
+- **Notebook creation and execution**: When user requests a notebook, ALWAYS create AND execute it immediately using `uv run jupyter nbconvert --to notebook --execute --inplace <notebook_path>`
+- **Notebook execution**: When running notebooks, use `--inplace` to overwrite the existing file rather than creating new ones
+- **Cache location**: Store joblib cache in `.cachedir/` directory

@@ -40,12 +40,28 @@ def _sanitize_slug(name: str) -> str:
     return _UNSAFE_SLUG_CHARS.sub("_", name)
 
 
+# Mapping from GrapherChartType to tab name
+_CHART_TYPE_TO_TAB: Dict[str, str] = {
+    "LineChart": "line",
+    "DiscreteBar": "discrete-bar",
+    "StackedDiscreteBar": "stacked-discrete-bar",
+    "ScatterPlot": "scatter",
+    "StackedArea": "stacked-area",
+    "SlopeChart": "slope",
+    "StackedBar": "stacked-bar",
+    "Marimekko": "marimekko",
+}
+
+
 class Chart:
     """Create interactive OWID charts from pandas DataFrames.
 
     The Chart class provides a declarative API for building interactive visualizations
     using OWID's Grapher library. Charts are configured through method chaining and
     render directly in Jupyter notebooks.
+
+    Multiple chart types can be enabled by chaining mark_*() methods. The first one
+    called becomes the default view, or use show() to set a specific default tab.
 
     Args:
         data: A pandas DataFrame containing the data to visualize. The DataFrame should
@@ -62,6 +78,7 @@ class Chart:
             'gdp': [21.4, 14.7, 2.9]
         })
 
+        # Single chart type
         Chart(df).mark_line().encode(
             x='year',
             y='gdp',
@@ -69,12 +86,17 @@ class Chart:
         ).label(
             title='GDP by Country'
         )
+
+        # Multiple chart types with bar as default
+        Chart(df).mark_line().mark_bar().show("discrete-bar").encode(...)
         ```
     """
 
     def __init__(self, data: pd.DataFrame):
         self.data = data.copy()
         self.config = ChartConfig()
+        self.chart_types: List[str] = []  # Available chart types
+        self.default_tab: Optional[str] = None  # Which tab to show by default
         self.x: Optional[str] = None
         self.y: Optional[str] = None
         self.entity: Optional[str] = None
@@ -278,36 +300,50 @@ class Chart:
             self.config.y_axis["canChangeScaleType"] = y_scale_control
         return self
 
+    def _add_chart_type(self, chart_type: str) -> None:
+        """Add a chart type if not already present."""
+        if chart_type not in self.chart_types:
+            self.chart_types.append(chart_type)
+        # First chart type added becomes the default tab
+        if self.default_tab is None:
+            self.default_tab = _CHART_TYPE_TO_TAB.get(chart_type, "chart")
+
     def mark_scatter(self) -> "Chart":
-        """Create a scatter plot.
+        """Add scatter plot to available chart types.
 
         Scatter plots display individual data points with x and y positions. Use `color`
         and `size` encodings for additional dimensions. Best for showing relationships
         between two numeric variables.
 
+        Can be combined with other mark_*() methods to enable multiple chart types.
+
         Returns:
             Self for method chaining.
         """
-        self.config.type = "ScatterPlot"
+        self._add_chart_type("ScatterPlot")
         return self
 
     def mark_line(self) -> "Chart":
-        """Create a line chart.
+        """Add line chart to available chart types.
 
         Line charts connect data points with lines, ideal for showing trends over time.
-        Multiple entities create multiple lines. This is the default chart type.
+        Multiple entities create multiple lines.
+
+        Can be combined with other mark_*() methods to enable multiple chart types.
 
         Returns:
             Self for method chaining.
         """
-        self.config.type = "LineChart"
+        self._add_chart_type("LineChart")
         return self
 
     def mark_bar(self, stacked: bool = False) -> "Chart":
-        """Create a bar chart.
+        """Add bar chart to available chart types.
 
         Bar charts display categorical data with rectangular bars. Bars can be shown
         side-by-side (default) or stacked on top of each other.
+
+        Can be combined with other mark_*() methods to enable multiple chart types.
 
         Args:
             stacked: If True, creates a stacked bar chart where bars for different
@@ -317,10 +353,105 @@ class Chart:
         Returns:
             Self for method chaining.
         """
-        if stacked:
-            self.config.type = "StackedDiscreteBar"
-        else:
-            self.config.type = "DiscreteBar"
+        chart_type = "StackedDiscreteBar" if stacked else "DiscreteBar"
+        self._add_chart_type(chart_type)
+        return self
+
+    def mark_map(
+        self,
+        time_tolerance: Optional[int] = None,
+        color_scheme: Optional[ColorSchemeName] = None,
+        binning_strategy: Optional[BinningStrategy] = None,
+        custom_numeric_values: Optional[List[float]] = None,
+    ) -> "Chart":
+        """Enable the map tab with optional configuration.
+
+        Adds a world map visualization showing data geographically. Can be combined
+        with other mark_*() methods.
+
+        Args:
+            time_tolerance: How many years to look back/forward for data
+            color_scheme: Color scheme name (e.g., "Reds", "Blues", "YlOrRd")
+            binning_strategy: How to bin values ("auto", "manual", "equalInterval", "quantiles")
+            custom_numeric_values: Custom bin boundaries when using manual binning
+
+        Returns:
+            Self for method chaining.
+
+        Example:
+            ```python
+            # Line chart with map, defaulting to map view
+            Chart(df).mark_line().mark_map().show("map").encode(...)
+
+            # Line chart with customized map
+            Chart(df).mark_line().mark_map(
+                color_scheme='Reds',
+                binning_strategy='manual',
+                custom_numeric_values=[0, 1000, 10000, 100000]
+            ).encode(...)
+            ```
+        """
+        self.config.has_map_tab = True
+
+        # Set default tab to map if this is the first mark_*() call
+        if self.default_tab is None:
+            self.default_tab = "map"
+
+        # Configure map options if any provided
+        if any([time_tolerance, color_scheme, binning_strategy, custom_numeric_values]):
+            color_scale = ColorScaleConfig(
+                baseColorScheme=color_scheme,
+                binningStrategy=binning_strategy,
+                customNumericValues=custom_numeric_values,
+            )
+            self.config.map_config = MapConfig(
+                timeTolerance=time_tolerance,
+                colorScale=color_scale
+                if any([color_scheme, binning_strategy, custom_numeric_values])
+                else None,
+            )
+
+        return self
+
+    def show(
+        self,
+        tab: Literal[
+            "line",
+            "discrete-bar",
+            "stacked-discrete-bar",
+            "scatter",
+            "stacked-area",
+            "slope",
+            "stacked-bar",
+            "marimekko",
+            "map",
+            "table",
+        ],
+    ) -> "Chart":
+        """Set which tab to display by default.
+
+        Use this to control which visualization is shown when the chart first loads.
+        The tab must correspond to an enabled chart type (via mark_*() methods).
+
+        Args:
+            tab: The tab to show by default. Options:
+                - "line": Line chart
+                - "discrete-bar": Bar chart
+                - "stacked-discrete-bar": Stacked bar chart
+                - "scatter": Scatter plot
+                - "map": World map
+                - "table": Data table
+
+        Returns:
+            Self for method chaining.
+
+        Example:
+            ```python
+            # Enable line and bar, but show bar by default
+            Chart(df).mark_line().mark_bar().show("discrete-bar").encode(...)
+            ```
+        """
+        self.default_tab = tab
         return self
 
     def interact(
@@ -328,7 +459,6 @@ class Chart:
         allow_relative: Optional[bool] = None,
         scale_control: Optional[bool] = None,
         entity_control: Optional[bool] = None,
-        enable_map: Optional[bool] = None,
     ) -> "Chart":
         """Add interactive controls to the chart.
 
@@ -336,7 +466,6 @@ class Chart:
             allow_relative: Show relative/absolute toggle.
             scale_control: Show log/linear scale toggle.
             entity_control: Show entity/country picker.
-            enable_map: Enable map visualization tab.
 
         Returns:
             Self for method chaining.
@@ -351,45 +480,6 @@ class Chart:
 
         if entity_control is not None:
             self.config.hide_entity_controls = not entity_control
-
-        if enable_map:
-            self.config.has_map_tab = True
-            self.config.tab = "map"
-
-        return self
-
-    def map(
-        self,
-        time: Optional[int] = None,
-        time_tolerance: Optional[int] = None,
-        color_scheme: Optional[ColorSchemeName] = None,
-        binning_strategy: Optional[BinningStrategy] = None,
-        custom_numeric_values: Optional[List[float]] = None,
-    ) -> "Chart":
-        """Configure the map tab.
-
-        Args:
-            time: The year to display on the map (e.g., 2010)
-            time_tolerance: How many years to look back/forward for data
-            color_scheme: Color scheme name (e.g., "OrRd", "BuGn", "YlOrRd")
-            binning_strategy: How to bin values ("auto", "manual", "equalInterval", "quantiles")
-            custom_numeric_values: Custom bin boundaries when using manual binning
-        """
-        self.config.has_map_tab = True
-
-        color_scale = ColorScaleConfig(
-            baseColorScheme=color_scheme,
-            binningStrategy=binning_strategy,
-            customNumericValues=custom_numeric_values,
-        )
-
-        self.config.map_config = MapConfig(
-            time=time,
-            timeTolerance=time_tolerance,
-            colorScale=color_scale
-            if any([color_scheme, binning_strategy, custom_numeric_values])
-            else None,
-        )
 
         return self
 
@@ -456,6 +546,12 @@ class Chart:
         html = generate_iframe(full_config)
         return html
 
+    def _get_primary_chart_type(self) -> "ChartType":
+        """Get the primary chart type (first in the list, or LineChart as default)."""
+        if self.chart_types:
+            return self.chart_types[0]  # type: ignore
+        return "LineChart"
+
     def export(self, include_data: bool = True) -> Dict[str, Any]:
         """Export the chart configuration as a dictionary.
 
@@ -465,14 +561,28 @@ class Chart:
         Returns:
             Dictionary containing the full chart configuration.
         """
-        self.config.auto_improve()
         config = self.config.to_dict()  # type: ignore
+
+        # Add chart types and tab
+        chart_types = self.chart_types if self.chart_types else ["LineChart"]
+        config["chartTypes"] = chart_types
+
+        # Set tab based on default_tab or first chart type
+        if self.default_tab:
+            config["tab"] = self.default_tab
+        elif chart_types:
+            config["tab"] = _CHART_TYPE_TO_TAB.get(chart_types[0], "line")
+
+        # Auto-improve: show title annotation for line charts with titles
+        if self.config.title and "LineChart" in chart_types:
+            config["hideTitleAnnotation"] = False
 
         # Convert MapConfig to dict (dataclass_json doesn't handle it automatically)
         if self.config.map_config is not None:
             config["mapConfig"] = self.config.map_config.to_dict()
 
-        config.update(self.data_config().to_dict(self.config.type))
+        primary_type = self._get_primary_chart_type()
+        config.update(self.data_config().to_dict(primary_type))
         config = prune(config)
         if not include_data:
             del config["owidDataset"]["data"]
@@ -489,7 +599,7 @@ class Chart:
             color=self.color,
             size=self.size,
             time_type=self.time_type,
-            chart_type=self.config.type,
+            chart_type=self._get_primary_chart_type(),
             selection=self.selection,
             timespan=self.timespan,
             x_unit=self.x_unit,
@@ -528,19 +638,20 @@ Chart types:
 class ChartConfig:
     """Configuration for OWID chart display and behavior.
 
-    This dataclass holds all chart-level settings including title, subtitle, chart type,
+    This dataclass holds all chart-level settings including title, subtitle,
     axis configuration, and UI control visibility. Properties use snake_case in Python
     but are automatically converted to camelCase for the JavaScript Grapher library.
 
+    Note: Chart types are now managed by the Chart class via chart_types list,
+    not in this config class.
+
     Attributes:
-        tab: Active tab to display ('chart' or 'map').
         title: Main chart title.
         subtitle: Additional context below title.
         note: Footnote text displayed at bottom.
         source_desc: Data source attribution.
         hide_logo: If True, hides OWID logo (default for embedded charts).
         is_published: Publication status flag.
-        type: Chart type ('LineChart', 'DiscreteBar', 'ScatterPlot', 'StackedDiscreteBar').
         hide_title_annotation: If True, hides the annotation arrow on title.
         hide_legend: If True, hides the chart legend.
         hide_entity_controls: If True, hides the entity/country picker UI.
@@ -552,14 +663,12 @@ class ChartConfig:
         y_axis: Dictionary of y-axis configuration (label, scale, etc).
     """
 
-    tab: str = "chart"
     title: str = ""
     subtitle: str = ""
     note: str = ""
     source_desc: str = ""
     hide_logo: bool = True
     is_published: bool = True
-    type: ChartType = "LineChart"
     hide_title_annotation: bool = True
     hide_legend: bool = False
     hide_entity_controls: bool = True
@@ -570,10 +679,6 @@ class ChartConfig:
     matching_entities_only: bool = False
     x_axis: dict = field(default_factory=dict)
     y_axis: dict = field(default_factory=dict)
-
-    def auto_improve(self):
-        if self.title and self.type == "LineChart":
-            self.hide_title_annotation = False
 
 
 @dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
@@ -701,11 +806,18 @@ class DataConfig:
             if "year" in df.columns:
                 year_col = "year"
         elif chart_type in ("DiscreteBar", "StackedDiscreteBar"):
-            # For bar charts: y is entity, x is value
-            entity_col = y
-            y_cols = [x]
-            if selection is None:
-                selection = list(df[y].unique())
+            # For bar charts: if entity is explicitly provided, use it
+            # Otherwise fall back to y as entity, x as value (horizontal bars)
+            if entity:
+                entity_col = entity
+                y_cols = [y]
+                if selection is None:
+                    selection = list(df[entity].unique())
+            else:
+                entity_col = y
+                y_cols = [x]
+                if selection is None:
+                    selection = list(df[y].unique())
         else:
             # For line charts: x is time, y is value, entity is grouping
             entity_col = entity
@@ -794,7 +906,7 @@ class DataConfig:
                 "metadata": metadata,
             },
             "dimensions": [d.to_dict() for d in self._get_dimensions()],  # type: ignore
-            "chartTypes": [chart_type],
+            # Note: chartTypes is set by Chart.export(), not here
         }
 
         if self.min_time is not None:

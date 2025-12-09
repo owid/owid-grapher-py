@@ -134,12 +134,28 @@ def translate_line_chart(config: dict, data: pd.DataFrame) -> str:
     labels = _gen_labels(config)
     interaction = _gen_interaction(config)
     transform = _gen_transform(config)
+    mark_map = _gen_mark_map(config)
 
     return f"""
 grapher.Chart(
     data{preselection}
-){encoding}{selection}{transform}{labels}{interaction}
+).mark_line(){mark_map}{encoding}{selection}{transform}{labels}{interaction}
 """.strip()
+
+
+def _gen_mark_map(config: dict) -> str:
+    """Generate the .mark_map() method call if map tab is enabled.
+
+    Args:
+        config: Chart configuration dictionary.
+
+    Returns:
+        Python code string for .mark_map() if map tab is enabled,
+        empty string otherwise.
+    """
+    if config.get("hasMapTab"):
+        return ".mark_map()"
+    return ""
 
 
 def _gen_transform(config: dict) -> str:
@@ -310,7 +326,9 @@ def _gen_interaction(config: dict) -> str:
     """Generate the .interact() method call for UI controls.
 
     Analyzes the config to determine which interactive controls are enabled
-    (entity picker, scale toggle, relative/absolute toggle, map tab).
+    (entity picker, scale toggle, relative/absolute toggle).
+
+    Note: Map tab is now enabled via mark_map(), not interact().
 
     Args:
         config: Chart configuration dictionary.
@@ -332,9 +350,6 @@ def _gen_interaction(config: dict) -> str:
     disable_relative = config.get("hideRelativeControls")
     if disable_relative is not None:
         parts.append(f"allow_relative={not disable_relative}")
-
-    if config.get("hasMapTab"):
-        parts.append("enable_map=True")
 
     if parts:
         return ".interact(\n    " + ",\n    ".join(parts) + "\n)"
