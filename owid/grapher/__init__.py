@@ -107,6 +107,7 @@ class Chart:
         self.timespan: Optional[Tuple[Any, Any]] = None
         self.x_unit: Optional[str] = None
         self.y_unit: Optional[str] = None
+        self.variable_configs: Dict[str, "VariableConfig"] = {}  # Column metadata
 
     def encode(
         self,
@@ -541,6 +542,72 @@ class Chart:
         self.config.matching_entities_only = matching_entities_only
         return self
 
+    def variable(
+        self,
+        column: str,
+        name: Optional[str] = None,
+        description_short: Optional[str] = None,
+        description_from_producer: Optional[str] = None,
+        description_processing: Optional[str] = None,
+        description_key: Optional[List[str]] = None,
+        unit: Optional[str] = None,
+        short_unit: Optional[str] = None,
+        source_name: Optional[str] = None,
+        source_link: Optional[str] = None,
+    ) -> "Chart":
+        """Add rich metadata to a data column/variable.
+
+        Configures display properties and documentation for a column that will
+        appear in tooltips, the data table, and source information.
+
+        Args:
+            column: Name of the DataFrame column to configure.
+            name: Display name (e.g., "Population" instead of "pop").
+            description_short: Brief description shown in tooltips.
+            description_from_producer: Original description from data source.
+            description_processing: How the data was processed/transformed.
+            description_key: List of key points about the variable.
+            unit: Full unit name (e.g., "million people").
+            short_unit: Abbreviated unit for compact display (e.g., "M").
+            source_name: Name of the data source.
+            source_link: URL to the data source.
+
+        Returns:
+            Self for method chaining.
+
+        Note:
+            The timespan is computed automatically from the data's time column.
+
+        Example:
+            ```python
+            Chart(df).mark_line().encode(
+                x='year',
+                y='population',
+                entity='country'
+            ).variable(
+                'population',
+                name='Population',
+                description_short='Total population in millions',
+                unit='million people',
+                short_unit='M',
+                source_name='World Bank',
+                source_link='https://data.worldbank.org'
+            )
+            ```
+        """
+        self.variable_configs[column] = VariableConfig(
+            name=name,
+            description_short=description_short,
+            description_from_producer=description_from_producer,
+            description_processing=description_processing,
+            description_key=description_key,
+            unit=unit,
+            short_unit=short_unit,
+            source_name=source_name,
+            source_link=source_link,
+        )
+        return self
+
     def _repr_html_(self):
         full_config = self.export()
         html = generate_iframe(full_config)
@@ -604,6 +671,7 @@ class Chart:
             timespan=self.timespan,
             x_unit=self.x_unit,
             y_unit=self.y_unit,
+            variable_configs=self.variable_configs,
         )
 
 
@@ -683,6 +751,37 @@ class ChartConfig:
 
 @dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
 @dataclass
+class VariableConfig:
+    """Configuration for a data variable/column.
+
+    Provides rich metadata for a column that appears in the chart's data table
+    and tooltips. Maps to OWID's columnDefs format.
+
+    Attributes:
+        name: Display name for the variable (e.g., "Population").
+        description_short: Brief description shown in tooltips.
+        description_from_producer: Original description from data source.
+        description_processing: How the data was processed/transformed.
+        description_key: List of key points about the variable.
+        unit: Full unit name (e.g., "million people").
+        short_unit: Abbreviated unit (e.g., "M").
+        source_name: Name of the data source.
+        source_link: URL to the data source.
+    """
+
+    name: Optional[str] = None
+    description_short: Optional[str] = None
+    description_from_producer: Optional[str] = None
+    description_processing: Optional[str] = None
+    description_key: Optional[List[str]] = None
+    unit: Optional[str] = None
+    short_unit: Optional[str] = None
+    source_name: Optional[str] = None
+    source_link: Optional[str] = None
+
+
+@dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
+@dataclass
 class Dimension:
     """Maps a DataFrame column to a chart dimension.
 
@@ -734,6 +833,7 @@ class DataConfig:
         max_time: Maximum time value for chart range.
         x_unit: Unit label for x-axis values (e.g., '$', 'kg').
         y_unit: Unit label for y-axis values.
+        variable_configs: Rich metadata for columns (from Chart.variable()).
     """
 
     df: pd.DataFrame
@@ -750,6 +850,7 @@ class DataConfig:
     max_time: Optional[int] = None
     x_unit: Optional[str] = None  # Unit for x-axis variable
     y_unit: Optional[str] = None  # Unit for y-axis variable
+    variable_configs: Dict[str, VariableConfig] = field(default_factory=dict)
 
     @classmethod
     def from_data(
@@ -766,6 +867,7 @@ class DataConfig:
         timespan: Optional[Tuple[Any, Any]] = None,
         x_unit: Optional[str] = None,
         y_unit: Optional[str] = None,
+        variable_configs: Optional[Dict[str, "VariableConfig"]] = None,
     ) -> "DataConfig":
         df = df.copy()
 
@@ -854,6 +956,7 @@ class DataConfig:
             max_time=max_time,
             x_unit=x_unit,
             y_unit=y_unit,
+            variable_configs=variable_configs or {},
         )
 
     def _get_dimensions(self) -> List[Dimension]:
@@ -867,6 +970,13 @@ class DataConfig:
         else:
             # For other charts: one dimension per y column
             return [Dimension(property="y", variable_name=col) for col in self.y_cols]
+
+    def _get_time_column(self) -> Optional[str]:
+        """Get the time column name based on chart type."""
+        if self.chart_type == "ScatterPlot":
+            return self.year_col  # May be None for scatter plots without time
+        else:
+            return self.x_col
 
     def to_dict(self, chart_type: ChartType) -> Dict[Any, Any]:
         display = DATE_DISPLAY if self.time_type == TimeType.DAY else {}
@@ -885,7 +995,29 @@ class DataConfig:
                 # For other charts, apply y_unit to all y columns
                 if self.y_unit:
                     col_display["unit"] = self.y_unit
-            metadata[col] = {"display": col_display} if col_display else {"display": {}}
+
+            col_metadata: Dict[str, Any] = {
+                "display": col_display if col_display else {}
+            }
+
+            # Add rich metadata from variable_configs if available
+            if col in self.variable_configs:
+                var_config = self.variable_configs[col]
+                # Convert to dict and use camelCase keys for JS
+                var_dict = var_config.to_dict()  # type: ignore
+                col_metadata.update(var_dict)
+
+                # Auto-compute timespan from the time column
+                time_col = self._get_time_column()
+                if time_col and time_col in self.df.columns:
+                    min_val = self.df[time_col].min()
+                    max_val = self.df[time_col].max()
+                    if min_val == max_val:
+                        col_metadata["timespan"] = str(min_val)
+                    else:
+                        col_metadata["timespan"] = f"{min_val}–{max_val}"
+
+            metadata[col] = col_metadata
 
         # Rename entity column to entityName for OwidTable
         df = self.df.copy()
@@ -928,12 +1060,28 @@ def _build_column_defs(config: Dict[str, Any]) -> str:
 
     column_defs = []
     for col_name, col_metadata in metadata.items():
-        col_def = {"slug": col_name, "type": "Numeric"}
+        col_def: Dict[str, Any] = {"slug": col_name, "type": "Numeric"}
 
         # Extract display settings if present
         display = col_metadata.get("display", {})
         if display:
             col_def["display"] = display
+
+        # Extract rich metadata fields from VariableConfig
+        for field_name in [
+            "name",
+            "descriptionShort",
+            "descriptionFromProducer",
+            "descriptionProcessing",
+            "descriptionKey",
+            "unit",
+            "shortUnit",
+            "sourceName",
+            "sourceLink",
+            "timespan",
+        ]:
+            if field_name in col_metadata and col_metadata[field_name] is not None:
+                col_def[field_name] = col_metadata[field_name]
 
         column_defs.append(col_def)
 

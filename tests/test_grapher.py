@@ -477,3 +477,97 @@ def test_matching_entities_only():
 
     # Check that matchingEntitiesOnly is set
     assert config["matchingEntitiesOnly"] is True
+
+
+def test_variable_metadata():
+    """Test variable() method for adding rich column metadata."""
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010, 2020],
+            "population": [1000, 2000, 3000],
+            "country": ["USA"] * 3,
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_line()
+        .encode(x="year", y="population", entity="country")
+        .variable(
+            "population",
+            name="Population",
+            description_short="Total population in millions",
+            unit="million people",
+            short_unit="M",
+            source_name="World Bank",
+            source_link="https://data.worldbank.org",
+        )
+    )
+    config = ch.export()
+
+    # Check metadata includes variable config
+    metadata = config["owidDataset"]["metadata"]["population"]
+    assert metadata["name"] == "Population"
+    assert metadata["descriptionShort"] == "Total population in millions"
+    assert metadata["unit"] == "million people"
+    assert metadata["shortUnit"] == "M"
+    assert metadata["sourceName"] == "World Bank"
+    assert metadata["sourceLink"] == "https://data.worldbank.org"
+    # Timespan should be auto-computed from year column
+    assert metadata["timespan"] == "2000–2020"
+
+
+def test_variable_metadata_in_column_defs():
+    """Test that variable metadata appears in columnDefs for OwidTable."""
+    config = {
+        "owidDataset": {
+            "metadata": {
+                "population": {
+                    "display": {"unit": "M"},
+                    "name": "Population",
+                    "descriptionShort": "Total population",
+                    "sourceName": "World Bank",
+                    "descriptionKey": ["Point 1", "Point 2"],
+                }
+            }
+        }
+    }
+
+    column_defs_str = gr._build_column_defs(config)
+    column_defs = json.loads(column_defs_str)
+
+    # Check that we have the column definition with all metadata
+    assert len(column_defs) == 1
+    pop_def = column_defs[0]
+    assert pop_def["slug"] == "population"
+    assert pop_def["type"] == "Numeric"
+    assert pop_def["display"]["unit"] == "M"
+    assert pop_def["name"] == "Population"
+    assert pop_def["descriptionShort"] == "Total population"
+    assert pop_def["sourceName"] == "World Bank"
+    assert pop_def["descriptionKey"] == ["Point 1", "Point 2"]
+
+
+def test_variable_chaining():
+    """Test that multiple variable() calls work correctly."""
+    df = pd.DataFrame(
+        {
+            "gdp": [1000, 5000, 10000],
+            "life_expectancy": [50, 70, 80],
+            "country": ["Country A", "Country B", "Country C"],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_scatter()
+        .encode(x="gdp", y="life_expectancy", entity="country")
+        .variable("gdp", name="GDP per capita", unit="$")
+        .variable("life_expectancy", name="Life expectancy", unit="years")
+    )
+    config = ch.export()
+
+    # Check both variables have metadata
+    metadata = config["owidDataset"]["metadata"]
+    assert metadata["gdp"]["name"] == "GDP per capita"
+    assert metadata["gdp"]["unit"] == "$"
+    assert metadata["life_expectancy"]["name"] == "Life expectancy"
+    assert metadata["life_expectancy"]["unit"] == "years"
