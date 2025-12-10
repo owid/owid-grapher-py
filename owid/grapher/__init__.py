@@ -9,7 +9,7 @@ import json
 import random
 import re
 import string
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
@@ -18,6 +18,7 @@ from dataclasses_json import LetterCase, dataclass_json
 from dateutil.parser import parse
 
 from owid.grapher.grapher_state import (  # noqa: F401 - re-exported for public API
+    AxisConfig,
     BinningStrategy,
     ColorScaleConfig,
     ColorSchemeName,
@@ -94,7 +95,13 @@ class Chart:
 
     def __init__(self, data: pd.DataFrame):
         self.data = data.copy()
-        self.config = ChartConfig()
+        # GrapherState stores all chart configuration
+        self._state = GrapherState(
+            hideLogo=True,
+            hideRelativeToggle=True,
+            xAxis=AxisConfig(),
+            yAxis=AxisConfig(),
+        )
         self.chart_types: List[str] = []  # Available chart types
         self.default_tab: Optional[str] = None  # Which tab to show by default
         self.x: Optional[str] = None
@@ -174,7 +181,7 @@ class Chart:
         if x == "date":
             self.time_type = TimeType.DAY
 
-        self.config.hide_legend = not entity
+        self._state.hideLegend = not entity
 
         return self
 
@@ -192,10 +199,10 @@ class Chart:
         Returns:
             Self for method chaining.
         """
-        self.config.title = title
-        self.config.subtitle = subtitle
-        self.config.source_desc = source_desc
-        self.config.note = note
+        self._state.title = title if title else None
+        self._state.subtitle = subtitle if subtitle else None
+        self._state.sourceDesc = source_desc if source_desc else None
+        self._state.note = note if note else None
         return self
 
     def xaxis(
@@ -216,14 +223,16 @@ class Chart:
         Returns:
             Self for method chaining.
         """
+        if self._state.xAxis is None:
+            self._state.xAxis = AxisConfig()
         if label is not None:
-            self.config.x_axis["label"] = label
+            self._state.xAxis.label = label
         if unit is not None:
             self.x_unit = unit
         if scale is not None:
-            self.config.x_axis["scaleType"] = scale
+            self._state.xAxis.scaleType = scale
         if scale_control is not None:
-            self.config.x_axis["canChangeScaleType"] = scale_control
+            self._state.xAxis.canChangeScaleType = scale_control
         return self
 
     def yaxis(
@@ -244,14 +253,16 @@ class Chart:
         Returns:
             Self for method chaining.
         """
+        if self._state.yAxis is None:
+            self._state.yAxis = AxisConfig()
         if label is not None:
-            self.config.y_axis["label"] = label
+            self._state.yAxis.label = label
         if unit is not None:
             self.y_unit = unit
         if scale is not None:
-            self.config.y_axis["scaleType"] = scale
+            self._state.yAxis.scaleType = scale
         if scale_control is not None:
-            self.config.y_axis["canChangeScaleType"] = scale_control
+            self._state.yAxis.canChangeScaleType = scale_control
         return self
 
     def axis(
@@ -283,22 +294,26 @@ class Chart:
         Returns:
             Self for method chaining.
         """
+        if self._state.xAxis is None:
+            self._state.xAxis = AxisConfig()
+        if self._state.yAxis is None:
+            self._state.yAxis = AxisConfig()
         if x_label is not None:
-            self.config.x_axis["label"] = x_label
+            self._state.xAxis.label = x_label
         if y_label is not None:
-            self.config.y_axis["label"] = y_label
+            self._state.yAxis.label = y_label
         if x_unit is not None:
             self.x_unit = x_unit
         if y_unit is not None:
             self.y_unit = y_unit
         if x_scale is not None:
-            self.config.x_axis["scaleType"] = x_scale
+            self._state.xAxis.scaleType = x_scale
         if y_scale is not None:
-            self.config.y_axis["scaleType"] = y_scale
+            self._state.yAxis.scaleType = y_scale
         if x_scale_control is not None:
-            self.config.x_axis["canChangeScaleType"] = x_scale_control
+            self._state.xAxis.canChangeScaleType = x_scale_control
         if y_scale_control is not None:
-            self.config.y_axis["canChangeScaleType"] = y_scale_control
+            self._state.yAxis.canChangeScaleType = y_scale_control
         return self
 
     def _add_chart_type(self, chart_type: str) -> None:
@@ -392,7 +407,7 @@ class Chart:
             ).encode(...)
             ```
         """
-        self.config.has_map_tab = True
+        self._state.hasMapTab = True
 
         # Set default tab to map if this is the first mark_*() call
         if self.default_tab is None:
@@ -405,7 +420,7 @@ class Chart:
                 binningStrategy=binning_strategy,
                 customNumericValues=custom_numeric_values,
             )
-            self.config.map_config = MapConfig(
+            self._state.map = MapConfig(
                 timeTolerance=time_tolerance,
                 colorScale=color_scale
                 if any([color_scheme, binning_strategy, custom_numeric_values])
@@ -472,15 +487,17 @@ class Chart:
             Self for method chaining.
         """
         if allow_relative is not None:
-            self.config.hide_relative_toggle = False
+            self._state.hideRelativeToggle = False
 
         if scale_control is not None:
-            # Update y_axis without overwriting existing settings
-            self.config.y_axis["scaleType"] = "linear"
-            self.config.y_axis["canChangeScaleType"] = scale_control
+            # Update yAxis without overwriting existing settings
+            if self._state.yAxis is None:
+                self._state.yAxis = AxisConfig()
+            self._state.yAxis.scaleType = "linear"
+            self._state.yAxis.canChangeScaleType = scale_control
 
         if entity_control is not None:
-            self.config.hide_entity_controls = not entity_control
+            self._state.addCountryMode = "add-country" if entity_control else "disabled"
 
         return self
 
@@ -522,7 +539,7 @@ class Chart:
         Returns:
             Self for method chaining.
         """
-        self.config.stack_mode = "relative" if relative else "absolute"
+        self._state.stackMode = "relative" if relative else "absolute"
         return self
 
     def filter(self, matching_entities_only: bool = True) -> "Chart":
@@ -539,7 +556,7 @@ class Chart:
         Returns:
             Self for method chaining.
         """
-        self.config.matching_entities_only = matching_entities_only
+        self._state.matchingEntitiesOnly = matching_entities_only
         return self
 
     def variable(
@@ -801,83 +818,49 @@ class Chart:
         min_time: Optional[Any],
         max_time: Optional[int],
     ) -> Dict[str, Any]:
-        """Build GrapherState configuration dict."""
+        """Build GrapherState configuration dict by merging stored config with computed values."""
         chart_types = self.chart_types if self.chart_types else ["LineChart"]
         chart_type = self._get_primary_chart_type()
         is_scatter = chart_type == "ScatterPlot"
 
-        grapher_config: Dict[str, Any] = {
-            "hideLogo": self.config.hide_logo,
-            "selectedEntityNames": selected_entities,
-            "chartTypes": chart_types,
-        }
+        # Update state with computed values
+        self._state.selectedEntityNames = selected_entities
+        self._state.chartTypes = chart_types  # type: ignore
 
         # Set tab
         if self.default_tab:
-            grapher_config["tab"] = self.default_tab
+            self._state.tab = self.default_tab  # type: ignore
         elif chart_types:
-            grapher_config["tab"] = _CHART_TYPE_TO_TAB.get(chart_types[0], "line")
+            self._state.tab = _CHART_TYPE_TO_TAB.get(chart_types[0], "line")  # type: ignore
 
         # Set column slugs based on chart type
         if is_scatter:
-            grapher_config["ySlugs"] = y_cols[1]  # y-axis value
-            grapher_config["xSlug"] = y_cols[0]  # x-axis value
+            self._state.ySlugs = y_cols[1]  # y-axis value
+            self._state.xSlug = y_cols[0]  # x-axis value
         else:
-            grapher_config["ySlugs"] = " ".join(y_cols)
-
-        # Title and text
-        if self.config.title:
-            grapher_config["title"] = self.config.title
-        if self.config.subtitle:
-            grapher_config["subtitle"] = self.config.subtitle
-        if self.config.note:
-            grapher_config["note"] = self.config.note
-        if self.config.source_desc:
-            grapher_config["sourceDesc"] = self.config.source_desc
-
-        # Map tab
-        if self.config.has_map_tab:
-            grapher_config["hasMapTab"] = True
-
-        # Stack mode
-        if self.config.stack_mode != "absolute":
-            grapher_config["stackMode"] = self.config.stack_mode
+            self._state.ySlugs = " ".join(y_cols)
 
         # Time bounds
         if min_time is not None:
-            grapher_config["minTime"] = min_time
+            self._state.minTime = min_time
         if max_time is not None:
-            grapher_config["maxTime"] = max_time
-
-        # Axis configuration
-        if self.config.x_axis:
-            grapher_config["xAxis"] = self.config.x_axis
-        if self.config.y_axis:
-            grapher_config["yAxis"] = self.config.y_axis
+            self._state.maxTime = max_time
 
         # Additional slugs
         if self.size:
-            grapher_config["sizeSlug"] = self.size
+            self._state.sizeSlug = self.size
         if color_col:
-            grapher_config["colorSlug"] = color_col
+            self._state.colorSlug = color_col
 
-        # Hide toggles
-        if self.config.hide_relative_toggle:
-            grapher_config["hideRelativeToggle"] = True
-        if self.config.hide_entity_controls:
-            grapher_config["hideEntityControls"] = True
-        if self.config.matching_entities_only:
-            grapher_config["matchingEntitiesOnly"] = True
+        # Auto-set map columnSlug from the first y column if not specified
+        if (
+            self._state.map is not None
+            and self._state.map.columnSlug is None
+            and y_cols
+        ):
+            self._state.map.columnSlug = y_cols[0]
 
-        # Map configuration
-        if self.config.map_config is not None:
-            map_config = self.config.map_config.to_dict()
-            # Auto-set columnSlug from the first y column if not specified
-            if "columnSlug" not in map_config and y_cols:
-                map_config["columnSlug"] = y_cols[0]
-            grapher_config["map"] = map_config
-
-        return grapher_config
+        return self._state.to_dict()
 
     def export(self) -> Dict[str, Any]:
         """Export the chart as the three components needed for rendering.
@@ -933,54 +916,6 @@ Chart types:
     - StackedDiscreteBar: Stacked bar chart
     - ScatterPlot: Scatter plot with x/y numeric dimensions
 """
-
-
-@dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
-@dataclass
-class ChartConfig:
-    """Configuration for OWID chart display and behavior.
-
-    This dataclass holds all chart-level settings including title, subtitle,
-    axis configuration, and UI control visibility. Properties use snake_case in Python
-    but are automatically converted to camelCase for the JavaScript Grapher library.
-
-    Note: Chart types are now managed by the Chart class via chart_types list,
-    not in this config class.
-
-    Attributes:
-        title: Main chart title.
-        subtitle: Additional context below title.
-        note: Footnote text displayed at bottom.
-        source_desc: Data source attribution.
-        hide_logo: If True, hides OWID logo (default for embedded charts).
-        is_published: Publication status flag.
-        hide_title_annotation: If True, hides the annotation arrow on title.
-        hide_legend: If True, hides the chart legend.
-        hide_entity_controls: If True, hides the entity/country picker UI.
-        hide_relative_toggle: If True, hides relative/absolute toggle button.
-        has_map_tab: If True, enables the map visualization tab.
-        stack_mode: For stacked charts, 'absolute' or 'relative' (percentage).
-        matching_entities_only: If True, only show entities with complete data.
-        x_axis: Dictionary of x-axis configuration (label, scale, etc).
-        y_axis: Dictionary of y-axis configuration (label, scale, etc).
-    """
-
-    title: str = ""
-    subtitle: str = ""
-    note: str = ""
-    source_desc: str = ""
-    hide_logo: bool = True
-    is_published: bool = True
-    hide_title_annotation: bool = True
-    hide_legend: bool = False
-    hide_entity_controls: bool = True
-    hide_relative_toggle: bool = True
-    has_map_tab: bool = False
-    map_config: Optional[MapConfig] = None
-    stack_mode: Literal["relative", "absolute"] = "absolute"
-    matching_entities_only: bool = False
-    x_axis: dict = field(default_factory=dict)
-    y_axis: dict = field(default_factory=dict)
 
 
 @dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore

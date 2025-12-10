@@ -554,9 +554,8 @@ class GrapherState:
         if self.hideTimeline is not None:
             result["hideTimeline"] = self.hideTimeline
 
-        # Entity/selection configuration
-        if self.selectedEntityNames:
-            result["selectedEntityNames"] = self.selectedEntityNames
+        # Entity/selection configuration (always include, even if empty)
+        result["selectedEntityNames"] = self.selectedEntityNames
         if self.focusedSeriesNames:
             result["focusedSeriesNames"] = self.focusedSeriesNames
         if self.excludedEntityNames is not None:
