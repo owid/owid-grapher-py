@@ -99,11 +99,10 @@ class Chart:
         self._state = GrapherState(
             hideLogo=True,
             hideRelativeToggle=True,
+            chartTypes=[],  # Will be populated by mark_*() methods
             xAxis=AxisConfig(),
             yAxis=AxisConfig(),
         )
-        self.chart_types: List[str] = []  # Available chart types
-        self.default_tab: Optional[str] = None  # Which tab to show by default
         self.x: Optional[str] = None
         self.y: Optional[str] = None
         self.entity: Optional[str] = None
@@ -223,8 +222,7 @@ class Chart:
         Returns:
             Self for method chaining.
         """
-        if self._state.xAxis is None:
-            self._state.xAxis = AxisConfig()
+        assert self._state.xAxis is not None  # Initialized in __init__
         if label is not None:
             self._state.xAxis.label = label
         if unit is not None:
@@ -253,8 +251,7 @@ class Chart:
         Returns:
             Self for method chaining.
         """
-        if self._state.yAxis is None:
-            self._state.yAxis = AxisConfig()
+        assert self._state.yAxis is not None  # Initialized in __init__
         if label is not None:
             self._state.yAxis.label = label
         if unit is not None:
@@ -294,10 +291,8 @@ class Chart:
         Returns:
             Self for method chaining.
         """
-        if self._state.xAxis is None:
-            self._state.xAxis = AxisConfig()
-        if self._state.yAxis is None:
-            self._state.yAxis = AxisConfig()
+        assert self._state.xAxis is not None  # Initialized in __init__
+        assert self._state.yAxis is not None  # Initialized in __init__
         if x_label is not None:
             self._state.xAxis.label = x_label
         if y_label is not None:
@@ -318,11 +313,11 @@ class Chart:
 
     def _add_chart_type(self, chart_type: str) -> None:
         """Add a chart type if not already present."""
-        if chart_type not in self.chart_types:
-            self.chart_types.append(chart_type)
+        if chart_type not in self._state.chartTypes:
+            self._state.chartTypes.append(chart_type)  # type: ignore
         # First chart type added becomes the default tab
-        if self.default_tab is None:
-            self.default_tab = _CHART_TYPE_TO_TAB.get(chart_type, "chart")
+        if self._state.tab == "chart":  # Default value means not yet set
+            self._state.tab = _CHART_TYPE_TO_TAB.get(chart_type, "chart")  # type: ignore
 
     def mark_scatter(self) -> "Chart":
         """Add scatter plot to available chart types.
@@ -410,8 +405,8 @@ class Chart:
         self._state.hasMapTab = True
 
         # Set default tab to map if this is the first mark_*() call
-        if self.default_tab is None:
-            self.default_tab = "map"
+        if self._state.tab == "chart":  # Default value means not yet set
+            self._state.tab = "map"
 
         # Configure map options if any provided
         if any([time_tolerance, color_scheme, binning_strategy, custom_numeric_values]):
@@ -467,7 +462,7 @@ class Chart:
             Chart(df).mark_line().mark_bar().show("discrete-bar").encode(...)
             ```
         """
-        self.default_tab = tab
+        self._state.tab = tab
         return self
 
     def interact(
@@ -491,8 +486,7 @@ class Chart:
 
         if scale_control is not None:
             # Update yAxis without overwriting existing settings
-            if self._state.yAxis is None:
-                self._state.yAxis = AxisConfig()
+            assert self._state.yAxis is not None  # Initialized in __init__
             self._state.yAxis.scaleType = "linear"
             self._state.yAxis.canChangeScaleType = scale_control
 
@@ -634,8 +628,8 @@ class Chart:
 
     def _get_primary_chart_type(self) -> "ChartType":
         """Get the primary chart type (first in the list, or LineChart as default)."""
-        if self.chart_types:
-            return self.chart_types[0]  # type: ignore
+        if self._state.chartTypes:
+            return self._state.chartTypes[0]  # type: ignore
         return "LineChart"
 
     def _prepare_data(
@@ -819,19 +813,19 @@ class Chart:
         max_time: Optional[int],
     ) -> Dict[str, Any]:
         """Build GrapherState configuration dict by merging stored config with computed values."""
-        chart_types = self.chart_types if self.chart_types else ["LineChart"]
+        # Default to LineChart if no chart types specified
+        if not self._state.chartTypes:
+            self._state.chartTypes = ["LineChart"]  # type: ignore
+
         chart_type = self._get_primary_chart_type()
         is_scatter = chart_type == "ScatterPlot"
 
         # Update state with computed values
         self._state.selectedEntityNames = selected_entities
-        self._state.chartTypes = chart_types  # type: ignore
 
-        # Set tab
-        if self.default_tab:
-            self._state.tab = self.default_tab  # type: ignore
-        elif chart_types:
-            self._state.tab = _CHART_TYPE_TO_TAB.get(chart_types[0], "line")  # type: ignore
+        # Set default tab if not already set
+        if self._state.tab == "chart" and self._state.chartTypes:
+            self._state.tab = _CHART_TYPE_TO_TAB.get(self._state.chartTypes[0], "line")  # type: ignore
 
         # Set column slugs based on chart type
         if is_scatter:
