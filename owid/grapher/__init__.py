@@ -14,7 +14,6 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
-from dataclasses_json import LetterCase, dataclass_json
 from dateutil.parser import parse
 
 from owid.grapher.grapher_state import (  # noqa: F401 - re-exported for public API
@@ -25,6 +24,7 @@ from owid.grapher.grapher_state import (  # noqa: F401 - re-exported for public 
     GrapherState,
     MapConfig,
 )
+from owid.grapher.utils import pruned_camel_json
 
 DATE_DISPLAY = {"yearIsDay": True, "zeroDay": "1970-01-01"}
 
@@ -912,7 +912,7 @@ Chart types:
 """
 
 
-@dataclass_json(letter_case=LetterCase.CAMEL)  # type: ignore
+@pruned_camel_json
 @dataclass
 class VariableConfig:
     """Configuration for a data variable/column.
@@ -983,7 +983,8 @@ def generate_iframe(
       figure {{ width: 100%; height: 100%; margin: 0; }}
       .error {{ color: red; padding: 20px; background: #fee; border-radius: 5px; }}
       /* Hide UI elements for cleaner notebook display */
-      .ActionButtons, .learn-more-about-data {{ display: none !important; }}
+      .ActionButtons {{ display: none !important; }}
+      .learn-more-about-data {{ display: none !important; }}
       {hide_sources_css}
     </style>
   </head>
