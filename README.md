@@ -23,6 +23,8 @@ pip install owid-grapher-py
 
 See the [quickstart notebook in Colab](https://colab.research.google.com/github/owid/owid-grapher-py/blob/master/examples/quickstart.ipynb) for a comprehensive walkthrough with examples.
 
+For advanced examples replicating real OWID charts, see the [top 5 charts notebook](https://colab.research.google.com/github/owid/owid-grapher-py/blob/master/examples/top_charts_2025.ipynb) which demonstrates confidence intervals, map configuration, and variable metadata.
+
 Get your data into a tidy data frame, then wrap it in a chart object and explain what marks you want and how to encode the dimensions you have (inspired by Altair).
 
 ```python
@@ -104,22 +106,41 @@ Chart(df).mark_scatter().encode(
 ### Map View
 
 ```python
-# Enable map tab (opens to map by default)
-Chart(df).mark_line().encode(
+# Enable map tab with mark_map()
+Chart(df).mark_line().mark_map().encode(
     x='year',
     y='population',
     entity='country'
-).interact(enable_map=True)
+)
 
 # Configure map with color scheme and binning
-Chart(df).mark_line().encode(
+Chart(df).mark_line().mark_map(
+    color_scheme='OrRd',          # Color scheme (e.g., 'OrRd', 'BuGn', 'YlOrRd')
+    binning_strategy='quantiles'  # How to bin values ('auto', 'manual', 'equalInterval', 'quantiles')
+).encode(
     x='year',
     y='population',
     entity='country'
-).map(
-    time=2020,                    # Year to display
-    color_scheme='OrRd',          # Color scheme (e.g., 'OrRd', 'BuGn', 'YlOrRd')
-    binning_strategy='quantiles'  # How to bin values ('auto', 'manual', 'equalInterval', 'quantiles')
+)
+
+# Set map as the default view
+Chart(df).mark_line().mark_map().show('map').encode(
+    x='year',
+    y='population',
+    entity='country'
+)
+```
+
+### Confidence Intervals
+
+```python
+# Line chart with shaded uncertainty band
+Chart(df).mark_line().encode(
+    x='year',
+    y='temperature',
+    y_lower='temperature_low',   # Lower bound column
+    y_upper='temperature_high',  # Upper bound column
+    entity='region'
 )
 ```
 
@@ -183,16 +204,15 @@ Chart(...).interact(scale_control=True)
 # Enable country/entity picker
 Chart(...).interact(entity_control=True)
 
-# Enable map tab
-Chart(...).interact(enable_map=True)
+# Single entity mode (useful for charts with multiple lines per entity, e.g., confidence intervals)
+Chart(...).interact(entity_mode='change-country')
 
 # Combine multiple options
 Chart(df).mark_line().encode(
     x='year', y='population', entity='country'
 ).interact(
     allow_relative=True,
-    entity_control=True,
-    enable_map=True
+    entity_control=True
 )
 ```
 
@@ -225,6 +245,24 @@ Chart(df).mark_scatter().encode(
     y='life_expectancy',
     entity='country'
 ).filter(matching_entities_only=True)
+```
+
+## Variable Metadata
+
+Configure display names, colors, and documentation for data columns:
+
+```python
+Chart(df).mark_line().encode(
+    x='year',
+    y='co2_emissions',
+    entity='country'
+).variable(
+    'co2_emissions',
+    name='CO₂ emissions',
+    unit='tonnes',
+    color='#ca2628',
+    description_short='Annual carbon dioxide emissions'
+)
 ```
 
 ## Export Config
@@ -295,6 +333,8 @@ Enable `grapher.Chart()` to support more chart types:
 - [x] Log/linear scale controls
 - [x] Entity filtering (matching_entities_only)
 - [x] Map configuration (color schemes, binning strategies)
+- [x] Confidence intervals (shaded uncertainty bands)
+- [x] Variable metadata (names, colors, descriptions)
 - [ ] Axis bounds (min/max values)
 - [ ] Line charts without a time axis
 
@@ -307,6 +347,13 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.2.4`
+    - Add `mark_map()` method for enabling map tab with color schemes and binning
+    - Add `show()` method for setting the default chart view
+    - Add confidence intervals via `y_lower` and `y_upper` in `encode()`
+    - Add `variable()` method for column metadata (name, color, unit, descriptions)
+    - Add `entity_mode` parameter to `interact()` for single-entity selection
+    - Add top 5 charts notebook demonstrating real OWID chart replications
 - `0.2.3`
     - Add `map()` method for configuring map tab with color schemes and binning strategies
     - Add `source_desc` support with automatic CSS hiding when empty
