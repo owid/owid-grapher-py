@@ -1131,3 +1131,219 @@ def _timespan_from_date(timespan: Tuple[str, str]) -> Tuple[int, int]:
     offset = dt.date(1970, 1, 1).toordinal()
 
     return (from_date_d.toordinal() - offset, to_date_d.toordinal() - offset)
+
+
+# Type alias for plot types
+PlotType = Literal["map", "line", "bar", "slope", "marimekko", "scatter", "stacked-bar"]
+
+# Type alias for variable configuration
+VariableConfigDict = Dict[str, Any]
+
+
+def plot(
+    data: pd.DataFrame,
+    *,
+    # Column mappings
+    x: str = "year",
+    y: str,
+    y_lower: Optional[str] = None,
+    y_upper: Optional[str] = None,
+    entity: str = "entity",
+    color: Optional[str] = None,
+    size: Optional[str] = None,
+    # Plot types
+    types: Optional[List[PlotType]] = None,
+    # Map configuration
+    color_scheme: Optional[ColorSchemeName] = None,
+    custom_numeric_values: Optional[List[float]] = None,
+    # Labels
+    title: Optional[str] = None,
+    subtitle: Optional[str] = None,
+    source: Optional[str] = None,
+    note: Optional[str] = None,
+    unit: Optional[str] = None,
+    # Variable metadata
+    variables: Optional[Dict[str, VariableConfigDict]] = None,
+    # Selection
+    entities: Optional[List[str]] = None,
+    timespan: Optional[Tuple[Any, Any]] = None,
+    # Interactivity
+    scale_control: bool = False,
+    entity_control: bool = False,
+    entity_mode: Optional[EntitySelectionMode] = None,
+    allow_relative: bool = False,
+) -> Chart:
+    """Create an OWID chart with a single function call.
+
+    This is a convenience wrapper around the Chart class that provides a simpler,
+    more concise API for common chart configurations.
+
+    Args:
+        data: A pandas DataFrame containing the data to visualize.
+        x: Column name for x-axis (default: "year").
+        y: Column name for y-axis values.
+        y_lower: Column name for lower bound of confidence interval.
+        y_upper: Column name for upper bound of confidence interval.
+        entity: Column name for grouping data (default: "entity").
+        color: Column name for color encoding (scatter plots).
+        size: Column name for size encoding (scatter plots).
+        types: List of plot types to enable. First type is shown by default.
+            Options: "map", "line", "bar", "slope", "marimekko", "scatter", "stacked-bar".
+            If not specified, defaults to ["line", "bar"] for time series data.
+        color_scheme: Color scheme for map visualization (e.g., "GnBu", "Reds").
+        custom_numeric_values: Custom bin boundaries for map legend.
+            When provided, uses manual binning strategy automatically.
+        title: Chart title.
+        subtitle: Chart subtitle.
+        source: Data source attribution (displayed as sourceDesc).
+        note: Additional notes or footnotes.
+        unit: Unit suffix for y-axis values (e.g., "$", "%", "t").
+        variables: Dict mapping column names to variable configuration. Each config
+            can include: name, description_short, unit, short_unit, color,
+            source_name, source_link. Example:
+            {"temperature": {"name": "Temperature", "color": "#ca2628", "unit": "°C"}}
+        entities: List of entity names to pre-select.
+        timespan: Tuple of (start, end) for time range filter.
+        scale_control: If True, shows log/linear scale toggle.
+        entity_control: If True, shows entity/country picker.
+        entity_mode: Entity selection mode ("add-country", "change-country", "disabled").
+            Use "change-country" for charts with confidence intervals.
+        allow_relative: If True, shows relative/absolute toggle.
+
+    Returns:
+        A configured Chart object ready for display in Jupyter.
+
+    Example:
+        ```python
+        import pandas as pd
+        from owid.grapher import plot
+
+        # Basic chart
+        plot(
+            df,
+            y="gdp_per_capita",
+            types=["map", "line", "bar"],
+            color_scheme="GnBu",
+            custom_numeric_values=[0, 1000, 5000, 10000, 50000],
+            unit="$",
+            title="GDP per capita",
+            entities=["United States", "China", "India"],
+            scale_control=True,
+            entity_control=True,
+        )
+
+        # Chart with confidence intervals
+        plot(
+            df_temp,
+            y="temperature",
+            y_lower="temperature_lower",
+            y_upper="temperature_upper",
+            types=["line"],
+            unit="°C",
+            variables={
+                "temperature": {"name": "Average", "color": "#ca2628"},
+                "temperature_lower": {"name": "Lower bound (95% CI)", "color": "#c8c8c8"},
+                "temperature_upper": {"name": "Upper bound (95% CI)", "color": "#c8c8c8"},
+            },
+            entity_mode="change-country",
+        )
+        ```
+    """
+    chart = Chart(data)
+
+    # Determine plot types
+    if types is None:
+        types = ["line", "bar"]  # Default for time series
+
+    # Map of type name to mark method
+    type_to_mark = {
+        "line": chart.mark_line,
+        "bar": chart.mark_bar,
+        "slope": chart.mark_slope,
+        "marimekko": chart.mark_marimekko,
+        "scatter": chart.mark_scatter,
+        "stacked-bar": lambda: chart.mark_bar(stacked=True),
+    }
+
+    # Track if map should be the first/default tab
+    first_type = types[0] if types else None
+    map_is_first = first_type == "map"
+
+    # Apply mark methods for each type (excluding map which is handled separately)
+    for plot_type in types:
+        if plot_type == "map":
+            continue
+        if plot_type in type_to_mark:
+            type_to_mark[plot_type]()
+
+    # Handle map configuration
+    if "map" in types:
+        binning_strategy: Optional[BinningStrategy] = None
+        if custom_numeric_values:
+            binning_strategy = "manual"
+
+        chart.mark_map(
+            color_scheme=color_scheme,
+            binning_strategy=binning_strategy,
+            custom_numeric_values=custom_numeric_values,
+        )
+
+    # If map should be the default tab, set it explicitly
+    if map_is_first:
+        chart.show("map")
+
+    # Apply encoding (including confidence intervals)
+    chart.encode(
+        x=x,
+        y=y,
+        y_lower=y_lower,
+        y_upper=y_upper,
+        entity=entity,
+        color=color,
+        size=size,
+    )
+
+    # Apply variable metadata
+    if variables:
+        for col, config in variables.items():
+            chart.variable(
+                col,
+                name=config.get("name"),
+                description_short=config.get("description_short"),
+                description_from_producer=config.get("description_from_producer"),
+                description_processing=config.get("description_processing"),
+                description_key=config.get("description_key"),
+                unit=config.get("unit"),
+                short_unit=config.get("short_unit"),
+                color=config.get("color"),
+                source_name=config.get("source_name"),
+                source_link=config.get("source_link"),
+            )
+
+    # Apply labels
+    if title or subtitle or source or note:
+        chart.label(
+            title=title or "",
+            subtitle=subtitle or "",
+            source_desc=source or "",
+            note=note or "",
+        )
+
+    # Apply unit
+    if unit:
+        chart.yaxis(unit=unit)
+
+    # Apply selection
+    if entities or timespan:
+        chart.select(entities=entities, timespan=timespan)
+
+    # Apply interactivity
+    if scale_control or entity_control or entity_mode or allow_relative:
+        chart.interact(
+            scale_control=scale_control if scale_control else None,
+            entity_control=entity_control if entity_control else None,
+            entity_mode=entity_mode,
+            allow_relative=allow_relative if allow_relative else None,
+        )
+
+    return chart
