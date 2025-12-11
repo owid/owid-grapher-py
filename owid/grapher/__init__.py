@@ -368,6 +368,36 @@ class Chart:
         self._add_chart_type(chart_type)
         return self
 
+    def mark_slope(self) -> "Chart":
+        """Add slope chart to available chart types.
+
+        Slope charts compare values between two time points, showing the change
+        as connecting lines between start and end values. Ideal for highlighting
+        increases and decreases across entities.
+
+        Can be combined with other mark_*() methods to enable multiple chart types.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._add_chart_type("SlopeChart")
+        return self
+
+    def mark_marimekko(self) -> "Chart":
+        """Add Marimekko chart to available chart types.
+
+        Marimekko charts (also called mosaic charts) show part-to-whole relationships
+        where both width and height of segments are meaningful. Width represents one
+        dimension (e.g., population) and height represents another (e.g., percentage).
+
+        Can be combined with other mark_*() methods to enable multiple chart types.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._add_chart_type("Marimekko")
+        return self
+
     def mark_map(
         self,
         time_tolerance: Optional[int] = None,
@@ -798,6 +828,18 @@ class Chart:
                         col_def["timespan"] = str(min_val)
                     else:
                         col_def["timespan"] = f"{min_val}–{max_val}"
+
+            # Set shortUnit from y_unit if not explicitly set via variable().
+            # The display["unit"] only affects tooltips/text, while shortUnit
+            # is what actually appears on y-axis tick labels (e.g., "10 billion t").
+            if chart_type == "ScatterPlot":
+                if col == y_cols[0] and self.x_unit:
+                    col_def.setdefault("shortUnit", self.x_unit)
+                elif col == y_cols[1] and self.y_unit:
+                    col_def.setdefault("shortUnit", self.y_unit)
+            else:
+                if self.y_unit:
+                    col_def.setdefault("shortUnit", self.y_unit)
 
             column_defs.append(col_def)
 

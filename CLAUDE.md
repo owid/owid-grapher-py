@@ -123,7 +123,29 @@ The `interact()` method enables UI controls:
 - `allow_relative=True` - Shows relative/absolute toggle
 - `entity_control=True` - Shows country/entity picker
 - `scale_control=True` - Shows log/linear scale toggle
-- `enable_map=True` - Adds map tab (and defaults to it)
+
+#### Map Tab
+
+Use `mark_map()` to enable the map visualization:
+```python
+Chart(df).mark_line().mark_map(
+    color_scheme='Reds',
+    binning_strategy='manual',
+    custom_numeric_values=[0, 1e6, 1e7, 1e8]
+).encode(...)
+```
+
+#### Multiple Chart Types
+
+Chain `mark_*()` methods to enable multiple views (line, bar, map):
+```python
+Chart(df).mark_line().mark_bar().mark_map().encode(...)
+```
+
+Use `show()` to set the default tab:
+```python
+Chart(df).mark_line().mark_bar().show("discrete-bar").encode(...)
+```
 
 ### Integration with OWID Site
 
@@ -166,3 +188,48 @@ The package is published to PyPI via GitHub Actions. To release:
 - **Notebook creation and execution**: When user requests a notebook, ALWAYS create AND execute it immediately using `uv run jupyter nbconvert --to notebook --execute --inplace <notebook_path>`
 - **Notebook execution**: When running notebooks, use `--inplace` to overwrite the existing file rather than creating new ones
 - **Cache location**: Store joblib cache in `.cachedir/` directory
+
+## Replicating OWID Charts
+
+To replicate an existing OWID chart (e.g., `https://ourworldindata.org/grapher/annual-co2-emissions-per-country`):
+
+### Available Endpoints
+
+For any chart URL `https://ourworldindata.org/grapher/{slug}`:
+- **CSV data**: `{url}.csv` or `{url}.csv?useColumnShortNames=true` (simpler column names)
+- **Chart config**: `{url}.config.json` (contains chart type, title, map settings, etc.)
+- **Metadata**: `{url}.metadata.json` (variable descriptions, sources)
+
+### Replication Workflow
+
+1. **Fetch the config** to understand chart settings:
+   ```python
+   import requests
+   config = requests.get("https://ourworldindata.org/grapher/annual-co2-emissions-per-country.config.json").json()
+   ```
+
+2. **Fetch the data**:
+   ```python
+   import pandas as pd
+   df = pd.read_csv("https://ourworldindata.org/grapher/annual-co2-emissions-per-country.csv?useColumnShortNames=true")
+   df = df.rename(columns={'Entity': 'entity', 'Year': 'year'})
+   ```
+
+3. **Extract key settings from config**:
+   - `config['type']` or `config['chartTypes']` → which `mark_*()` methods to use
+   - `config['hasMapTab']` → whether to add `mark_map()`
+   - `config['map']['colorScale']` → map color scheme and binning
+   - `config['selectedEntityNames']` → pre-selected countries
+   - `config['title']`, `config['subtitle']`, `config['sourceDesc']` → labels
+
+4. **Build the chart**
+
+### Checklist for Replicating Charts
+
+When replicating OWID charts, always ensure:
+- [ ] Check `chartTypes` in config:
+  - If `chartTypes` is **not specified** → use both `.mark_line().mark_bar()` (default)
+  - If `chartTypes: ["LineChart"]` → use only `.mark_line()` (explicitly line-only)
+  - If `chartTypes` lists multiple types → include all specified
+- [ ] Include `.mark_map()` if `hasMapTab` is true in config
+- [ ] Set `.yaxis(unit="...")` with the appropriate unit (e.g., "t", "years", "%")
