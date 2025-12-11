@@ -21,6 +21,7 @@ from owid.grapher.grapher_state import (  # noqa: F401 - re-exported for public 
     BinningStrategy,
     ColorScaleConfig,
     ColorSchemeName,
+    EntitySelectionMode,
     GrapherState,
     MapConfig,
 )
@@ -105,6 +106,8 @@ class Chart:
         )
         self.x: Optional[str] = None
         self.y: Optional[str] = None
+        self.y_lower: Optional[str] = None  # Lower bound for confidence intervals
+        self.y_upper: Optional[str] = None  # Upper bound for confidence intervals
         self.entity: Optional[str] = None
         self.color: Optional[str] = None
         self.size: Optional[str] = None
@@ -119,6 +122,8 @@ class Chart:
         self,
         x: Optional[str] = None,
         y: Optional[str] = None,
+        y_lower: Optional[str] = None,
+        y_upper: Optional[str] = None,
         entity: Optional[str] = None,
         color: Optional[str] = None,
         size: Optional[str] = None,
@@ -136,6 +141,10 @@ class Chart:
                 ('year', 'date'). For scatter plots, a numeric value column.
             y: Column name for y-axis values to plot. For bar charts, can be the entity
                 column if you want entities on the y-axis.
+            y_lower: Column name for lower bound of confidence interval. When specified
+                along with y_upper, renders a shaded confidence band around the main line.
+            y_upper: Column name for upper bound of confidence interval. When specified
+                along with y_lower, renders a shaded confidence band around the main line.
             entity: Column name for grouping data (e.g., 'country', 'region'). Each unique
                 value becomes a separate line/series. Optional for single-series charts.
             color: Column name for color encoding in scatter plots. Values map to colors.
@@ -156,6 +165,15 @@ class Chart:
                 entity='country'
             )
 
+            # Line chart with confidence intervals
+            Chart(df).mark_line().encode(
+                x='year',
+                y='temperature',
+                y_lower='temperature_low',
+                y_upper='temperature_high',
+                entity='region'
+            )
+
             # Scatter plot with color and size
             Chart(df).mark_scatter().encode(
                 x='gdp_per_capita',
@@ -168,12 +186,14 @@ class Chart:
         """
         self.x = x
         self.y = y
+        self.y_lower = y_lower
+        self.y_upper = y_upper
         self.entity = entity
         self.color = color
         self.size = size
 
         # fail early if there's been a typo
-        for col in [x, y, entity, color, size]:
+        for col in [x, y, y_lower, y_upper, entity, color, size]:
             if col and col not in self.data.columns:
                 raise ValueError(f"no such column: {col}")
 
@@ -368,6 +388,36 @@ class Chart:
         self._add_chart_type(chart_type)
         return self
 
+    def mark_slope(self) -> "Chart":
+        """Add slope chart to available chart types.
+
+        Slope charts compare values between two time points, showing the change
+        as connecting lines between start and end values. Ideal for highlighting
+        increases and decreases across entities.
+
+        Can be combined with other mark_*() methods to enable multiple chart types.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._add_chart_type("SlopeChart")
+        return self
+
+    def mark_marimekko(self) -> "Chart":
+        """Add Marimekko chart to available chart types.
+
+        Marimekko charts (also called mosaic charts) show part-to-whole relationships
+        where both width and height of segments are meaningful. Width represents one
+        dimension (e.g., population) and height represents another (e.g., percentage).
+
+        Can be combined with other mark_*() methods to enable multiple chart types.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._add_chart_type("Marimekko")
+        return self
+
     def mark_map(
         self,
         time_tolerance: Optional[int] = None,
@@ -470,13 +520,19 @@ class Chart:
         allow_relative: Optional[bool] = None,
         scale_control: Optional[bool] = None,
         entity_control: Optional[bool] = None,
+        entity_mode: Optional[EntitySelectionMode] = None,
     ) -> "Chart":
         """Add interactive controls to the chart.
 
         Args:
             allow_relative: Show relative/absolute toggle.
             scale_control: Show log/linear scale toggle.
-            entity_control: Show entity/country picker.
+            entity_control: Show entity/country picker (shorthand for entity_mode).
+            entity_mode: Entity selection mode. Options:
+                - "add-country": Allow adding multiple entities (default when entity_control=True)
+                - "change-country": Allow only single entity selection (useful for
+                  charts with multiple lines per entity, e.g., confidence intervals)
+                - "disabled": Disable entity selection
 
         Returns:
             Self for method chaining.
@@ -490,7 +546,9 @@ class Chart:
             self._state.yAxis.scaleType = "linear"
             self._state.yAxis.canChangeScaleType = scale_control
 
-        if entity_control is not None:
+        if entity_mode is not None:
+            self._state.addCountryMode = entity_mode
+        elif entity_control is not None:
             self._state.addCountryMode = "add-country" if entity_control else "disabled"
 
         return self
@@ -563,6 +621,7 @@ class Chart:
         description_key: Optional[List[str]] = None,
         unit: Optional[str] = None,
         short_unit: Optional[str] = None,
+        color: Optional[str] = None,
         source_name: Optional[str] = None,
         source_link: Optional[str] = None,
     ) -> "Chart":
@@ -580,6 +639,7 @@ class Chart:
             description_key: List of key points about the variable.
             unit: Full unit name (e.g., "million people").
             short_unit: Abbreviated unit for compact display (e.g., "M").
+            color: Hex color for the line/series (e.g., "#ca2628").
             source_name: Name of the data source.
             source_link: URL to the data source.
 
@@ -614,6 +674,7 @@ class Chart:
             description_key=description_key,
             unit=unit,
             short_unit=short_unit,
+            color=color,
             source_name=source_name,
             source_link=source_link,
         )
@@ -711,6 +772,13 @@ class Chart:
         else:
             # Line charts: x is time, y is value, entity is grouping
             y_cols = [y_col]
+            # Add confidence interval columns if specified
+            if self.y_lower:
+                y_lower_col = rename_map.get(self.y_lower, self.y_lower)
+                y_cols.append(y_lower_col)
+            if self.y_upper:
+                y_upper_col = rename_map.get(self.y_upper, self.y_upper)
+                y_cols.append(y_upper_col)
             if self.selection is None:
                 if entity_col:
                     selected_entities = list(df[entity_col].unique())
@@ -798,6 +866,18 @@ class Chart:
                         col_def["timespan"] = str(min_val)
                     else:
                         col_def["timespan"] = f"{min_val}–{max_val}"
+
+            # Set shortUnit from y_unit if not explicitly set via variable().
+            # The display["unit"] only affects tooltips/text, while shortUnit
+            # is what actually appears on y-axis tick labels (e.g., "10 billion t").
+            if chart_type == "ScatterPlot":
+                if col == y_cols[0] and self.x_unit:
+                    col_def.setdefault("shortUnit", self.x_unit)
+                elif col == y_cols[1] and self.y_unit:
+                    col_def.setdefault("shortUnit", self.y_unit)
+            else:
+                if self.y_unit:
+                    col_def.setdefault("shortUnit", self.y_unit)
 
             column_defs.append(col_def)
 
@@ -928,6 +1008,7 @@ class VariableConfig:
         description_key: List of key points about the variable.
         unit: Full unit name (e.g., "million people").
         short_unit: Abbreviated unit (e.g., "M").
+        color: Hex color for the line/series (e.g., "#ca2628").
         source_name: Name of the data source.
         source_link: URL to the data source.
     """
@@ -939,6 +1020,7 @@ class VariableConfig:
     description_key: Optional[List[str]] = None
     unit: Optional[str] = None
     short_unit: Optional[str] = None
+    color: Optional[str] = None
     source_name: Optional[str] = None
     source_link: Optional[str] = None
 
