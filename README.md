@@ -23,12 +23,40 @@ pip install owid-grapher-py
 
 See the [quickstart notebook in Colab](https://colab.research.google.com/github/owid/owid-grapher-py/blob/master/examples/quickstart.ipynb) for a comprehensive walkthrough with examples.
 
-For advanced examples replicating real OWID charts, see the [top 5 charts notebook](https://colab.research.google.com/github/owid/owid-grapher-py/blob/master/examples/top_charts_2025.ipynb) which demonstrates confidence intervals, map configuration, and variable metadata.
+For advanced examples replicating real OWID charts, see:
+- [Top 5 charts (simple API)](https://colab.research.google.com/github/owid/owid-grapher-py/blob/master/examples/top_charts_2025_simple.ipynb) - using the `plot()` function
+- [Top 5 charts (full API)](https://colab.research.google.com/github/owid/owid-grapher-py/blob/master/examples/top_charts_2025.ipynb) - using the `Chart` class with method chaining
 
-Get your data into a tidy data frame, then wrap it in a chart object and explain what marks you want and how to encode the dimensions you have (inspired by Altair).
+### Simple API with `plot()`
+
+The simplest way to create a chart is with the `plot()` function:
 
 ```python
 import pandas as pd
+from owid.grapher import plot
+
+df = pd.read_csv("https://ourworldindata.org/grapher/gdp-per-capita-worldbank.csv")
+df = df.rename(columns={"Entity": "entity", "Year": "year"})
+
+plot(
+    df,
+    y="ny_gdp_pcap_pp_kd",
+    types=["map", "line", "bar"],
+    color_scheme="GnBu",
+    custom_numeric_values=[0, 1000, 2000, 5000, 10000, 20000, 50000, 100000],
+    unit="$",
+    title="GDP per capita",
+    entities=["United States", "China", "India"],
+    scale_control=True,
+    entity_control=True,
+)
+```
+
+### Full API with `Chart`
+
+For more control, use the `Chart` class with method chaining (inspired by Altair):
+
+```python
 from owid.grapher import Chart
 
 # Create sample data
@@ -48,7 +76,50 @@ Chart(df).mark_line().encode(
 ).label(title='Population Over Time')
 ```
 
-## Chart Types
+## The `plot()` Function
+
+The `plot()` function provides a simple, single-call API for creating charts:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `y` | Y-axis column name | (required) |
+| `x` | X-axis column name | `"year"` |
+| `entity` | Entity grouping column | `"entity"` |
+| `y_lower`, `y_upper` | Confidence interval columns | `None` |
+| `color`, `size` | Scatter plot encodings | `None` |
+| `types` | List of plot types: `"map"`, `"line"`, `"bar"`, `"slope"`, `"marimekko"`, `"scatter"`, `"stacked-bar"` | `["line", "bar"]` |
+| `color_scheme` | Map color scheme (e.g., `"GnBu"`, `"Reds"`) | `None` |
+| `custom_numeric_values` | Custom bin boundaries for map | `None` |
+| `title`, `subtitle`, `source`, `note` | Chart labels | `None` |
+| `unit` | Y-axis unit suffix | `None` |
+| `variables` | Dict of column metadata (name, color, etc.) | `None` |
+| `entities` | Pre-selected entities | `None` |
+| `timespan` | Time range filter | `None` |
+| `scale_control` | Show log/linear toggle | `False` |
+| `entity_control` | Show entity picker | `False` |
+| `entity_mode` | `"add-country"`, `"change-country"`, or `"disabled"` | `None` |
+| `allow_relative` | Show relative/absolute toggle | `False` |
+
+### Confidence Intervals with `plot()`
+
+```python
+plot(
+    df,
+    y="temperature",
+    y_lower="temperature_lower",
+    y_upper="temperature_upper",
+    types=["line"],
+    unit="°C",
+    variables={
+        "temperature": {"name": "Average", "color": "#ca2628"},
+        "temperature_lower": {"name": "Lower bound (95% CI)", "color": "#c8c8c8"},
+        "temperature_upper": {"name": "Upper bound (95% CI)", "color": "#c8c8c8"},
+    },
+    entity_mode="change-country",
+)
+```
+
+## Chart Types (Full API)
 
 ### Line Chart
 
@@ -335,6 +406,7 @@ Enable `grapher.Chart()` to support more chart types:
 - [x] Map configuration (color schemes, binning strategies)
 - [x] Confidence intervals (shaded uncertainty bands)
 - [x] Variable metadata (names, colors, descriptions)
+- [x] Simple `plot()` function API
 - [ ] Axis bounds (min/max values)
 - [ ] Line charts without a time axis
 
@@ -347,6 +419,11 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.3.0`
+    - Add `plot()` function for simple, single-call chart creation
+    - Support confidence intervals (`y_lower`, `y_upper`) and variable metadata in `plot()`
+    - Add `entity_mode` parameter to `plot()` for single-entity selection
+    - Add new example notebook using the simple `plot()` API
 - `0.2.4`
     - Add `mark_map()` method for enabling map tab with color schemes and binning
     - Add `show()` method for setting the default chart view

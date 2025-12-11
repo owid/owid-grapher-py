@@ -560,3 +560,107 @@ def test_variable_chaining():
     assert gdp_def["unit"] == "$"
     assert life_def["name"] == "Life expectancy"
     assert life_def["unit"] == "years"
+
+
+def test_plot_wrapper_basic():
+    """Test basic plot() wrapper function."""
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010, 2020],
+            "population": [1000, 2000, 3000],
+            "entity": ["USA"] * 3,
+        }
+    )
+    ch = gr.plot(
+        df,
+        y="population",
+        title="Population over time",
+    )
+    export = ch.export()
+    config = export["grapher_config"]
+
+    # Check default types (line + bar)
+    assert "LineChart" in config["chartTypes"]
+    assert "DiscreteBar" in config["chartTypes"]
+    assert config["title"] == "Population over time"
+
+
+def test_plot_wrapper_with_map():
+    """Test plot() wrapper with map as first type."""
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010, 2020],
+            "gdp": [1000, 5000, 10000],
+            "entity": ["USA"] * 3,
+        }
+    )
+    ch = gr.plot(
+        df,
+        y="gdp",
+        types=["map", "line"],
+        color_scheme="GnBu",
+        custom_numeric_values=[0, 1000, 5000, 10000],
+        unit="$",
+        title="GDP per capita",
+    )
+    export = ch.export()
+    config = export["grapher_config"]
+
+    # Check map is enabled and is default tab
+    assert config["hasMapTab"] is True
+    assert config["tab"] == "map"
+
+    # Check map color scale
+    assert config["map"]["colorScale"]["baseColorScheme"] == "GnBu"
+    assert config["map"]["colorScale"]["binningStrategy"] == "manual"
+    assert config["map"]["colorScale"]["customNumericValues"] == [0, 1000, 5000, 10000]
+
+    # Check column_defs has unit
+    column_defs = export["column_defs"]
+    assert column_defs[0]["display"]["unit"] == "$"
+
+
+def test_plot_wrapper_interactivity():
+    """Test plot() wrapper interactivity options."""
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010, 2020],
+            "population": [1000, 2000, 3000],
+            "entity": ["USA"] * 3,
+        }
+    )
+    ch = gr.plot(
+        df,
+        y="population",
+        scale_control=True,
+        entity_control=True,
+    )
+    export = ch.export()
+    config = export["grapher_config"]
+
+    # Check interactivity settings
+    assert config["yAxis"]["canChangeScaleType"] is True
+    # addCountryMode defaults to "add-country" so it's not in output
+    # but entity control should be enabled (not "disabled")
+    assert config.get("addCountryMode", "add-country") == "add-country"
+
+
+def test_plot_wrapper_entity_selection():
+    """Test plot() wrapper with entity selection."""
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010, 2020] * 3,
+            "population": [1000, 2000, 3000, 500, 700, 900, 800, 1200, 1600],
+            "entity": ["USA"] * 3 + ["UK"] * 3 + ["France"] * 3,
+        }
+    )
+    ch = gr.plot(
+        df,
+        y="population",
+        entities=["USA", "UK"],
+    )
+    export = ch.export()
+    config = export["grapher_config"]
+
+    # Check entity selection
+    assert config["selectedEntityNames"] == ["USA", "UK"]
