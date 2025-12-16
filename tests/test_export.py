@@ -14,12 +14,16 @@ import pytest
 
 from owid.grapher import Chart
 
-# Check if Playwright is available
+# Check if Playwright is available AND browser is installed
+PLAYWRIGHT_AVAILABLE = False
 try:
-    import playwright.sync_api  # noqa: F401
+    import playwright.sync_api
 
+    # Check if chromium is actually installed
+    with playwright.sync_api.sync_playwright() as p:
+        p.chromium.executable_path
     PLAYWRIGHT_AVAILABLE = True
-except ImportError:
+except (ImportError, Exception):
     PLAYWRIGHT_AVAILABLE = False
 
 
