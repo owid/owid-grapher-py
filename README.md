@@ -442,11 +442,12 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.3.1`
+    - Add PNG/SVG export via `save_png()`, `save_svg()`, and `export_chart()`
 - `0.3.0`
     - Add `plot()` function for simple, single-call chart creation
     - Support confidence intervals (`y_lower`, `y_upper`) and variable metadata in `plot()`
     - Add `entity_mode` parameter to `plot()` for single-entity selection
-    - Add PNG/SVG export via `save_png()`, `save_svg()`, and `export_chart()`
     - Add new example notebook using the simple `plot()` API
 - `0.2.4`
     - Add `mark_map()` method for enabling map tab with color schemes and binning
