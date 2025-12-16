@@ -1,6 +1,6 @@
 [project]
 name = "owid-grapher-py"
-version = "0.3.0"
+version = "0.3.1"
 description = "OWID charts for rendering in Jupyter notebooks."
 readme = "README.md"
 license = { text = "MIT" }
@@ -60,6 +60,8 @@ dev-dependencies = [
     "mkdocstrings[python]>=0.24.0",
     "jupyter>=1.1.1",
     "nbconvert>=7.16.6",
+    "playwright>=1.40.0",
+    "nest-asyncio>=1.5.0",
 ]
 
 [tool.ruff]

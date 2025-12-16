@@ -35,7 +35,7 @@ The simplest way to create a chart is with the `plot()` function:
 import pandas as pd
 from owid.grapher import plot
 
-df = pd.read_csv("https://ourworldindata.org/grapher/gdp-per-capita-worldbank.csv")
+df = pd.read_csv("https://ourworldindata.org/grapher/gdp-per-capita-worldbank.csv?useColumnShortNames=true")
 df = df.rename(columns={"Entity": "entity", "Year": "year"})
 
 plot(
@@ -336,7 +336,30 @@ Chart(df).mark_line().encode(
 )
 ```
 
-## Export Config
+## Exporting Charts
+
+### Export to PNG/SVG
+
+Export charts as images using Playwright (requires separate installation):
+
+```bash
+pip install playwright && playwright install chromium
+```
+
+```python
+# Save to file
+chart.save_png("chart.png")
+chart.save_svg("chart.svg")
+
+# Get bytes for display in notebook
+from owid.grapher.export import export_chart
+from IPython.display import SVG
+
+svg_bytes = export_chart(chart, format="svg")
+SVG(svg_bytes)
+```
+
+### Export Config
 
 View the underlying JSON configuration:
 
@@ -419,6 +442,8 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.3.1`
+    - Add PNG/SVG export via `save_png()`, `save_svg()`, and `export_chart()`
 - `0.3.0`
     - Add `plot()` function for simple, single-call chart creation
     - Support confidence intervals (`y_lower`, `y_upper`) and variable metadata in `plot()`
