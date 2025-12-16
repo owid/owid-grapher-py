@@ -965,6 +965,60 @@ class Chart:
             ),
         }
 
+    def save_png(
+        self, path: str, include_details: bool = False, timeout: int = 30000
+    ) -> None:
+        """Save the chart as a PNG image.
+
+        This method uses Playwright to render the chart in a headless browser
+        and export it using the Grapher's built-in rasterize function.
+
+        Args:
+            path: File path to save the PNG.
+            include_details: Whether to include chart details/sources in export.
+            timeout: Timeout in milliseconds for rendering.
+
+        Raises:
+            ImportError: If Playwright is not installed. Install with:
+                pip install playwright && playwright install chromium
+
+        Example:
+            ```python
+            chart = Chart(df).mark_line().encode(x='year', y='population')
+            chart.save_png("my_chart.png")
+            ```
+        """
+        from owid.grapher.export import save_png
+
+        save_png(self, path, include_details=include_details, timeout=timeout)
+
+    def save_svg(
+        self, path: str, include_details: bool = False, timeout: int = 30000
+    ) -> None:
+        """Save the chart as an SVG image.
+
+        This method uses Playwright to render the chart in a headless browser
+        and export it using the Grapher's built-in rasterize function.
+
+        Args:
+            path: File path to save the SVG.
+            include_details: Whether to include chart details/sources in export.
+            timeout: Timeout in milliseconds for rendering.
+
+        Raises:
+            ImportError: If Playwright is not installed. Install with:
+                pip install playwright && playwright install chromium
+
+        Example:
+            ```python
+            chart = Chart(df).mark_line().encode(x='year', y='population')
+            chart.save_svg("my_chart.svg")
+            ```
+        """
+        from owid.grapher.export import save_svg
+
+        save_svg(self, path, include_details=include_details, timeout=timeout)
+
 
 class TimeType(Enum):
     """Enumeration for time dimension types.

@@ -35,7 +35,7 @@ The simplest way to create a chart is with the `plot()` function:
 import pandas as pd
 from owid.grapher import plot
 
-df = pd.read_csv("https://ourworldindata.org/grapher/gdp-per-capita-worldbank.csv")
+df = pd.read_csv("https://ourworldindata.org/grapher/gdp-per-capita-worldbank.csv?useColumnShortNames=true")
 df = df.rename(columns={"Entity": "entity", "Year": "year"})
 
 plot(
