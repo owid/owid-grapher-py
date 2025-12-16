@@ -19,10 +19,11 @@ PLAYWRIGHT_AVAILABLE = False
 try:
     import playwright.sync_api
 
-    # Check if chromium is actually installed
+    # Check if chromium is actually installed by verifying the executable exists
     with playwright.sync_api.sync_playwright() as p:
-        p.chromium.executable_path
-    PLAYWRIGHT_AVAILABLE = True
+        executable = p.chromium.executable_path
+        if Path(executable).exists():
+            PLAYWRIGHT_AVAILABLE = True
 except (ImportError, Exception):
     PLAYWRIGHT_AVAILABLE = False
 
