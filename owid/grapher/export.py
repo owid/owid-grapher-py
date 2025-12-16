@@ -160,8 +160,10 @@ async def _export_chart_async(
                 "window.grapherReady === true", timeout=timeout
             )
 
-            # Give fonts time to load
-            await page.wait_for_timeout(1000)
+            # Wait for fonts to load using the Font Loading API
+            await page.wait_for_function(
+                "document.fonts.ready.then(() => true)", timeout=timeout
+            )
 
             # Call rasterize() and get the result
             result = await page.evaluate(
