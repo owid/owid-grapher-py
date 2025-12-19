@@ -359,6 +359,19 @@ svg_bytes = export_chart(chart, format="svg")
 SVG(svg_bytes)
 ```
 
+### Export to HTML
+
+Get the chart as a standalone HTML page that can be opened in a browser or embedded in an iframe:
+
+```python
+# Get HTML string
+html = chart.to_html()
+
+# Save to file
+with open("chart.html", "w") as f:
+    f.write(chart.to_html())
+```
+
 ### Export Config
 
 View the underlying JSON configuration:
@@ -442,6 +455,8 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.3.2`
+    - Add `to_html()` method for getting standalone HTML
 - `0.3.1`
     - Add PNG/SVG export via `save_png()`, `save_svg()`, and `export_chart()`
 - `0.3.0`
