@@ -8,7 +8,6 @@
 
 import asyncio
 import base64
-import json
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -40,70 +39,17 @@ def _generate_export_html(
 ) -> str:
     """Generate HTML page for exporting the chart.
 
-    This is similar to generate_iframe but designed for headless export,
-    with the grapherState exposed globally for the export script to access.
+    This uses the shared _generate_chart_html function with expose_state=True
+    so that the grapherState is available globally for the export script.
     """
-    # Hide sources section if no sourceDesc provided
-    hide_sources_css = (
-        ".sources { display: none !important; }"
-        if not grapher_config.get("sourceDesc")
-        else ""
+    from owid.grapher import _generate_chart_html
+
+    return _generate_chart_html(
+        csv_data,
+        column_defs,
+        grapher_config,
+        expose_state=True,
     )
-
-    return f"""<!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link
-      href="https://fonts.googleapis.com/css?family=Lato:300,400,400i,700,700i|Playfair+Display:400,700&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      rel="stylesheet"
-      href="https://expose-grapher-state.owid.pages.dev/assets/owid.css"
-    />
-    <style>
-      body {{ margin: 0; padding: 0; }}
-      figure {{ width: 100%; height: 100%; margin: 0; }}
-      {hide_sources_css}
-    </style>
-  </head>
-  <body>
-    <figure id="grapher-container"></figure>
-    <script type="module" src="https://expose-grapher-state.owid.pages.dev/assets/owid.mjs"></script>
-    <script type="module">
-      // Wait for the module to load
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const {{ Grapher, GrapherState, OwidTable, React, createRoot }} = window;
-      const container = document.getElementById("grapher-container");
-
-      if (!GrapherState || !OwidTable || !React || !createRoot) {{
-        throw new Error("Required exports not available");
-      }}
-
-      const csvData = `{csv_data}`;
-      const columnDefs = {json.dumps(column_defs)};
-      const table = new OwidTable(csvData, columnDefs);
-
-      const grapherState = new GrapherState({{
-        table: table,
-        ...{json.dumps(grapher_config)},
-        isConfigReady: true,
-        isDataReady: true,
-      }});
-
-      // Expose grapherState globally for the export script
-      window.grapherState = grapherState;
-
-      const reactRoot = createRoot(container);
-      reactRoot.render(React.createElement(Grapher, {{ grapherState }}));
-
-      // Signal that rendering is complete
-      window.grapherReady = true;
-    </script>
-  </body>
-</html>"""
 
 
 def _check_playwright() -> None:

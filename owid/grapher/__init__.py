@@ -1019,6 +1019,33 @@ class Chart:
 
         save_svg(self, path, include_details=include_details, timeout=timeout)
 
+    def to_html(self) -> str:
+        """Return the full HTML page for this chart.
+
+        This returns a complete HTML document that can be:
+        - Saved to a file and opened in a browser
+        - Embedded in an iframe on a webpage
+        - Used for custom rendering scenarios
+
+        Returns:
+            Complete HTML document string.
+
+        Example:
+            ```python
+            chart = Chart(df).mark_line().encode(x='year', y='population')
+
+            # Save to file
+            with open("chart.html", "w") as f:
+                f.write(chart.to_html())
+            ```
+        """
+        export = self.export()
+        return _generate_chart_html(
+            export["csv_data"],
+            export["column_defs"],
+            export["grapher_config"],
+        )
+
 
 class TimeType(Enum):
     """Enumeration for time dimension types.
@@ -1079,6 +1106,119 @@ class VariableConfig:
     source_link: Optional[str] = None
 
 
+def _generate_chart_html(
+    csv_data: str,
+    column_defs: List[Dict[str, Any]],
+    grapher_config: Dict[str, Any],
+    *,
+    expose_state: bool = False,
+    hide_ui_elements: bool = False,
+    show_error_div: bool = False,
+) -> str:
+    """Generate HTML page for rendering the chart.
+
+    This is the core HTML generation function used by both generate_iframe()
+    for Jupyter rendering and _generate_export_html() for headless export.
+
+    Args:
+        csv_data: CSV string of the data (should be escaped for JS template literal)
+        column_defs: List of column definition dicts for OwidTable
+        grapher_config: Dict of GrapherState configuration
+        expose_state: If True, expose grapherState globally for export scripts
+        hide_ui_elements: If True, hide ActionButtons and learn-more-about-data
+        show_error_div: If True, show error div on initialization failure
+
+    Returns:
+        Complete HTML document string.
+    """
+    # Hide sources section if no sourceDesc provided
+    hide_sources_css = (
+        ".sources { display: none !important; }"
+        if not grapher_config.get("sourceDesc")
+        else ""
+    )
+
+    # Additional CSS for hiding UI elements
+    hide_ui_css = ""
+    if hide_ui_elements:
+        hide_ui_css = """
+      .ActionButtons { display: none !important; }
+      .learn-more-about-data { display: none !important; }"""
+
+    # Error div CSS
+    error_css = ""
+    if show_error_div:
+        error_css = """
+      .error { color: red; padding: 20px; background: #fee; border-radius: 5px; }"""
+
+    # Error handling JS
+    error_js = ""
+    if show_error_div:
+        error_js = """
+        container.innerHTML = '<div class="error">Required exports not available. Check console.</div>';"""
+
+    # Expose state JS for export
+    expose_state_js = ""
+    ready_signal_js = ""
+    if expose_state:
+        expose_state_js = """
+      // Expose grapherState globally for the export script
+      window.grapherState = grapherState;"""
+        ready_signal_js = """
+      // Signal that rendering is complete
+      window.grapherReady = true;"""
+
+    return f"""<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      href="https://fonts.googleapis.com/css?family=Lato:300,400,400i,700,700i|Playfair+Display:400,700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://expose-grapher-state.owid.pages.dev/assets/owid.css"
+    />
+    <style>
+      body {{ margin: 0; padding: 0; }}
+      figure {{ width: 100%; height: 100%; margin: 0; }}{error_css}{hide_ui_css}
+      {hide_sources_css}
+    </style>
+  </head>
+  <body>
+    <figure id="grapher-container"></figure>
+    <script type="module" src="https://expose-grapher-state.owid.pages.dev/assets/owid.mjs"></script>
+    <script type="module">
+      // Wait for the module to load
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const {{ Grapher, GrapherState, OwidTable, React, createRoot }} = window;
+      const container = document.getElementById("grapher-container");
+
+      if (!GrapherState || !OwidTable || !React || !createRoot) {{{error_js}
+        throw new Error("Required exports not available");
+      }}
+
+      const csvData = `{csv_data}`;
+      const columnDefs = {json.dumps(column_defs)};
+      const table = new OwidTable(csvData, columnDefs);
+
+      const grapherState = new GrapherState({{
+        table: table,
+        ...{json.dumps(grapher_config)},
+        isConfigReady: true,
+        isDataReady: true,
+      }});
+{expose_state_js}
+      const reactRoot = createRoot(container);
+      reactRoot.render(React.createElement(Grapher, {{ grapherState }}));
+{ready_signal_js}
+    </script>
+  </body>
+</html>"""
+
+
 def generate_iframe(
     csv_data: str, column_defs: List[Dict[str, Any]], grapher_config: Dict[str, Any]
 ) -> str:
@@ -1094,67 +1234,14 @@ def generate_iframe(
     """
     iframe_name = "".join(random.choice(string.ascii_lowercase) for _ in range(20))
 
-    # Hide sources section if no sourceDesc provided
-    hide_sources_css = (
-        ".sources { display: none !important; }"
-        if not grapher_config.get("sourceDesc")
-        else ""
+    iframe_contents = _generate_chart_html(
+        csv_data,
+        column_defs,
+        grapher_config,
+        hide_ui_elements=True,
+        show_error_div=True,
     )
 
-    iframe_contents = f"""
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link
-      href="https://fonts.googleapis.com/css?family=Lato:300,400,400i,700,700i|Playfair+Display:400,700&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      rel="stylesheet"
-      href="https://expose-grapher-state.owid.pages.dev/assets/owid.css"
-    />
-    <style>
-      body {{ margin: 0; padding: 0; }}
-      figure {{ width: 100%; height: 100%; margin: 0; }}
-      .error {{ color: red; padding: 20px; background: #fee; border-radius: 5px; }}
-      /* Hide UI elements for cleaner notebook display */
-      .ActionButtons {{ display: none !important; }}
-      .learn-more-about-data {{ display: none !important; }}
-      {hide_sources_css}
-    </style>
-  </head>
-  <body>
-    <figure id="grapher-container"></figure>
-    <script type="module" src="https://expose-grapher-state.owid.pages.dev/assets/owid.mjs"></script>
-    <script type="module">
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const {{ Grapher, GrapherState, OwidTable, React, createRoot }} = window;
-      const container = document.getElementById("grapher-container");
-
-      if (!GrapherState || !OwidTable || !React || !createRoot) {{
-        container.innerHTML = '<div class="error">Required exports not available. Check console.</div>';
-        throw new Error("Required exports not available");
-      }}
-
-      const csvData = `{csv_data}`;
-      const columnDefs = {json.dumps(column_defs)};
-      const table = new OwidTable(csvData, columnDefs);
-
-      const grapherState = new GrapherState({{
-        table: table,
-        ...{json.dumps(grapher_config)},
-        isConfigReady: true,
-        isDataReady: true,
-      }});
-
-      const reactRoot = createRoot(container);
-      reactRoot.render(React.createElement(Grapher, {{ grapherState }}));
-    </script>
-  </body>
-</html>
-"""  # noqa
     # Escape for the outer template literal (order matters: backslash first)
     iframe_contents = iframe_contents.replace("\\", "\\\\")
     iframe_contents = iframe_contents.replace("`", "\\`")
