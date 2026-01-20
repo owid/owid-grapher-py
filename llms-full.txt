@@ -1,0 +1,534 @@
+# owid-grapher-py
+
+> A Python library for creating interactive Our World in Data charts in Jupyter notebooks. Provides a declarative API inspired by Altair for building visualizations that render using OWID's Grapher JavaScript library.
+
+Key features:
+- Create line charts, bar charts, scatter plots, slope charts, and world maps
+- Fluent method-chaining API similar to Altair/Vega-Lite
+- Renders interactive charts directly in Jupyter notebooks
+- Fetch and visualize data from live OWID charts
+- Export charts to PNG, SVG, or standalone HTML
+
+## Installation
+
+```bash
+pip install owid-grapher-py
+```
+
+For PNG/SVG export support:
+```bash
+pip install playwright && playwright install chromium
+```
+
+Requirements: Python 3.10+, Jupyter notebook or JupyterLab
+
+## Quick Start
+
+### Simple API with plot()
+
+The simplest way to create a chart:
+
+```python
+import pandas as pd
+from owid.grapher import plot
+
+df = pd.read_csv("https://ourworldindata.org/grapher/gdp-per-capita-worldbank.csv?useColumnShortNames=true")
+df = df.rename(columns={"Entity": "entity", "Year": "year"})
+
+plot(
+    df,
+    y="ny_gdp_pcap_pp_kd",
+    types=["map", "line", "bar"],
+    color_scheme="GnBu",
+    custom_numeric_values=[0, 1000, 2000, 5000, 10000, 20000, 50000, 100000],
+    unit="$",
+    title="GDP per capita",
+    entities=["United States", "China", "India"],
+    scale_control=True,
+    entity_control=True,
+)
+```
+
+### Full API with Chart
+
+For more control, use the Chart class with method chaining:
+
+```python
+import pandas as pd
+from owid.grapher import Chart
+
+df = pd.DataFrame({
+    'year': [2000, 2005, 2010, 2015, 2020] * 3,
+    'country': ['Australia'] * 5 + ['New Zealand'] * 5 + ['Japan'] * 5,
+    'population': [19.2, 20.4, 22.0, 23.8, 25.7,
+                   3.9, 4.1, 4.4, 4.6, 5.1,
+                   126.8, 127.8, 128.1, 127.1, 125.8]
+})
+
+Chart(df).mark_line().encode(
+    x='year',
+    y='population',
+    entity='country'
+).label(title='Population Over Time')
+```
+
+## API Reference
+
+### plot() Function
+
+Single-call convenience function for creating charts.
+
+```python
+plot(
+    data: pd.DataFrame,
+    *,
+    x: str = "year",              # X-axis column name
+    y: str,                       # Y-axis column name (required)
+    y_lower: str = None,          # Lower bound for confidence intervals
+    y_upper: str = None,          # Upper bound for confidence intervals
+    entity: str = "entity",       # Entity grouping column
+    color: str = None,            # Color encoding (scatter plots)
+    size: str = None,             # Size encoding (scatter plots)
+    types: List[str] = None,      # Plot types: "map", "line", "bar", "slope", "marimekko", "scatter", "stacked-bar"
+    color_scheme: str = None,     # Map color scheme (e.g., "GnBu", "Reds", "YlOrRd")
+    custom_numeric_values: List[float] = None,  # Custom bin boundaries for map
+    title: str = None,
+    subtitle: str = None,
+    source: str = None,
+    note: str = None,
+    unit: str = None,             # Y-axis unit suffix
+    variables: Dict = None,       # Column metadata (name, color, unit, etc.)
+    entities: List[str] = None,   # Pre-selected entities
+    timespan: Tuple = None,       # Time range filter (start, end)
+    scale_control: bool = False,  # Show log/linear toggle
+    entity_control: bool = False, # Show entity picker
+    entity_mode: str = None,      # "add-country", "change-country", or "disabled"
+    allow_relative: bool = False, # Show relative/absolute toggle
+) -> Chart
+```
+
+Example with confidence intervals:
+
+```python
+plot(
+    df,
+    y="temperature",
+    y_lower="temperature_lower",
+    y_upper="temperature_upper",
+    types=["line"],
+    unit="C",
+    variables={
+        "temperature": {"name": "Average", "color": "#ca2628"},
+        "temperature_lower": {"name": "Lower bound (95% CI)", "color": "#c8c8c8"},
+        "temperature_upper": {"name": "Upper bound (95% CI)", "color": "#c8c8c8"},
+    },
+    entity_mode="change-country",
+)
+```
+
+### Chart Class
+
+Create interactive OWID charts from pandas DataFrames.
+
+```python
+Chart(data: pd.DataFrame)
+```
+
+#### Chart.encode()
+
+Map DataFrame columns to visual properties.
+
+```python
+chart.encode(
+    x: str = None,        # X-axis column (time for line/bar, numeric for scatter)
+    y: str = None,        # Y-axis values column
+    y_lower: str = None,  # Lower confidence interval bound
+    y_upper: str = None,  # Upper confidence interval bound
+    entity: str = None,   # Grouping column (creates separate lines/series)
+    color: str = None,    # Color encoding for scatter plots
+    size: str = None,     # Size encoding for scatter plots
+) -> Chart
+```
+
+Example:
+
+```python
+# Line chart with confidence intervals
+Chart(df).mark_line().encode(
+    x='year',
+    y='temperature',
+    y_lower='temperature_low',
+    y_upper='temperature_high',
+    entity='region'
+)
+
+# Scatter plot with color and size
+Chart(df).mark_scatter().encode(
+    x='gdp_per_capita',
+    y='life_expectancy',
+    entity='country',
+    color='continent',
+    size='population'
+)
+```
+
+#### Mark Methods
+
+Add chart types. Multiple can be chained to enable tabs.
+
+```python
+chart.mark_line() -> Chart           # Line chart for time series
+chart.mark_bar(stacked=False) -> Chart  # Bar chart (stacked=True for stacked bars)
+chart.mark_scatter() -> Chart        # Scatter plot
+chart.mark_slope() -> Chart          # Slope chart (compare two time points)
+chart.mark_marimekko() -> Chart      # Marimekko/mosaic chart
+chart.mark_map(                      # World map visualization
+    time_tolerance: int = None,
+    color_scheme: str = None,        # e.g., "Reds", "Blues", "YlOrRd", "GnBu"
+    binning_strategy: str = None,    # "auto", "manual", "equalInterval", "quantiles"
+    custom_numeric_values: List[float] = None,
+) -> Chart
+```
+
+Example with multiple chart types:
+
+```python
+# Enable line, bar, and map tabs
+Chart(df).mark_line().mark_bar().mark_map(
+    color_scheme='OrRd',
+    binning_strategy='quantiles'
+).encode(x='year', y='population', entity='country')
+```
+
+#### Chart.show()
+
+Set the default tab when chart loads.
+
+```python
+chart.show(
+    tab: str  # "line", "discrete-bar", "stacked-discrete-bar", "scatter", "map", "table"
+) -> Chart
+```
+
+Example:
+
+```python
+# Show bar chart by default
+Chart(df).mark_line().mark_bar().show("discrete-bar").encode(...)
+```
+
+#### Chart.label()
+
+Add text labels to the chart.
+
+```python
+chart.label(
+    title: str = "",
+    subtitle: str = "",
+    source_desc: str = "",
+    note: str = "",
+) -> Chart
+```
+
+#### Chart.xaxis() / Chart.yaxis()
+
+Configure individual axes.
+
+```python
+chart.xaxis(
+    label: str = None,
+    unit: str = None,              # e.g., "$", "kg"
+    scale: str = None,             # "linear" or "log"
+    scale_control: bool = None,    # Allow user to toggle scale
+) -> Chart
+
+chart.yaxis(
+    label: str = None,
+    unit: str = None,
+    scale: str = None,
+    scale_control: bool = None,
+) -> Chart
+```
+
+Example:
+
+```python
+Chart(df).mark_scatter().encode(
+    x='gdp_per_capita',
+    y='life_expectancy',
+    entity='country'
+).xaxis(
+    label='GDP per Capita',
+    unit='$',
+    scale='log',
+    scale_control=True
+).yaxis(
+    label='Life Expectancy',
+    unit='years'
+)
+```
+
+#### Chart.axis()
+
+Configure both axes at once.
+
+```python
+chart.axis(
+    x_label: str = None,
+    y_label: str = None,
+    x_unit: str = None,
+    y_unit: str = None,
+    x_scale: str = None,           # "linear" or "log"
+    y_scale: str = None,
+    x_scale_control: bool = None,
+    y_scale_control: bool = None,
+) -> Chart
+```
+
+#### Chart.interact()
+
+Add interactive UI controls.
+
+```python
+chart.interact(
+    allow_relative: bool = None,   # Show relative/absolute toggle
+    scale_control: bool = None,    # Show log/linear scale toggle
+    entity_control: bool = None,   # Show entity picker
+    entity_mode: str = None,       # "add-country", "change-country", "disabled"
+) -> Chart
+```
+
+Use `entity_mode='change-country'` for charts with multiple lines per entity (e.g., confidence intervals).
+
+#### Chart.select()
+
+Pre-select entities and time range.
+
+```python
+chart.select(
+    entities: List[str] = None,
+    timespan: Tuple = None,        # (start, end)
+) -> Chart
+```
+
+Example:
+
+```python
+Chart(df).mark_line().encode(...).select(
+    entities=['Australia', 'Japan'],
+    timespan=(2000, 2015)
+)
+```
+
+#### Chart.transform()
+
+Transform data display.
+
+```python
+chart.transform(relative: bool) -> Chart  # Show as percentage change from baseline
+```
+
+#### Chart.filter()
+
+Filter entities with incomplete data.
+
+```python
+chart.filter(matching_entities_only: bool = True) -> Chart
+```
+
+Useful for scatter plots to only show entities with both x and y values.
+
+#### Chart.variable()
+
+Add rich metadata to a data column.
+
+```python
+chart.variable(
+    column: str,                          # Column name to configure
+    name: str = None,                     # Display name
+    description_short: str = None,        # Tooltip description
+    description_from_producer: str = None,
+    description_processing: str = None,
+    description_key: List[str] = None,
+    unit: str = None,                     # Full unit (e.g., "million people")
+    short_unit: str = None,               # Abbreviated (e.g., "M")
+    color: str = None,                    # Hex color (e.g., "#ca2628")
+    source_name: str = None,
+    source_link: str = None,
+) -> Chart
+```
+
+Example:
+
+```python
+Chart(df).mark_line().encode(
+    x='year', y='co2_emissions', entity='country'
+).variable(
+    'co2_emissions',
+    name='CO2 emissions',
+    unit='tonnes',
+    color='#ca2628',
+    description_short='Annual carbon dioxide emissions',
+    source_name='World Bank',
+    source_link='https://data.worldbank.org'
+)
+```
+
+#### Export Methods
+
+```python
+chart.export() -> Dict           # Get underlying config dict
+chart.to_html() -> str           # Get standalone HTML page
+chart.save_png(path: str, include_details: bool = False, timeout: int = 30000)
+chart.save_svg(path: str, include_details: bool = False, timeout: int = 30000)
+```
+
+Example:
+
+```python
+chart = Chart(df).mark_line().encode(x='year', y='population')
+
+# Save as image
+chart.save_png("chart.png")
+chart.save_svg("chart.svg")
+
+# Get HTML
+with open("chart.html", "w") as f:
+    f.write(chart.to_html())
+```
+
+## Fetching OWID Data (owid.site module)
+
+Functions to fetch chart data and configurations from ourworldindata.org.
+
+### get_chart_data()
+
+Fetch data from an OWID chart as a DataFrame.
+
+```python
+from owid.site import get_chart_data
+
+# Using slug
+df = get_chart_data(slug='life-expectancy')
+
+# Using full URL
+df = get_chart_data(url='https://ourworldindata.org/grapher/co2-emissions')
+```
+
+Returns DataFrame with columns: year (or date), entity, variable, value
+
+### get_chart_config()
+
+Extract chart configuration from an OWID page.
+
+```python
+from owid.site import get_chart_config
+
+config = get_chart_config(url='https://ourworldindata.org/grapher/life-expectancy')
+print(config['title'])
+print(config['type'])
+print(config['dimensions'])
+```
+
+### get_owid_data()
+
+Fetch raw variable data from OWID API (lower-level).
+
+```python
+from owid.site import get_chart_config, get_owid_data
+
+config = get_chart_config(url='https://ourworldindata.org/grapher/life-expectancy')
+owid_data = get_owid_data(config)
+```
+
+### owid_data_to_frame()
+
+Convert OWID data format to DataFrame.
+
+```python
+from owid.site import owid_data_to_frame
+
+df = owid_data_to_frame(owid_data)
+```
+
+## Notebook Generation (owid.grapher.notebook module)
+
+Generate Jupyter notebooks from OWID chart configurations.
+
+```python
+from owid.site import get_chart_config, get_chart_data
+from owid.grapher.notebook import translate_config, generate_notebook
+
+# Get Python code for a chart
+config = get_chart_config(slug='life-expectancy')
+data = get_chart_data(slug='life-expectancy')
+python_code = translate_config(config, data)
+print(python_code)
+
+# Generate full notebook
+generate_notebook(config, path='./notebooks/')
+```
+
+## Replicating OWID Charts
+
+For any chart URL `https://ourworldindata.org/grapher/{slug}`:
+- CSV data: `{url}.csv` or `{url}.csv?useColumnShortNames=true`
+- Chart config: `{url}.config.json`
+- Metadata: `{url}.metadata.json`
+
+Example workflow:
+
+```python
+import pandas as pd
+import requests
+from owid.grapher import plot
+
+# 1. Fetch config to understand chart settings
+config = requests.get(
+    "https://ourworldindata.org/grapher/annual-co2-emissions-per-country.config.json"
+).json()
+
+# 2. Fetch data
+df = pd.read_csv(
+    "https://ourworldindata.org/grapher/annual-co2-emissions-per-country.csv?useColumnShortNames=true"
+)
+df = df.rename(columns={'Entity': 'entity', 'Year': 'year'})
+
+# 3. Check config for chart types and settings
+has_map = config.get('hasMapTab', False)
+chart_types = config.get('chartTypes', ['LineChart'])
+
+# 4. Create chart
+plot(
+    df,
+    y='annual_co2_emissions',
+    types=['map', 'line', 'bar'] if has_map else ['line', 'bar'],
+    title=config.get('title'),
+    unit='t',
+)
+```
+
+## Chart Types Reference
+
+| Type | Method | Description |
+|------|--------|-------------|
+| Line | `mark_line()` | Time series with connected points |
+| Bar | `mark_bar()` | Categorical bars |
+| Stacked Bar | `mark_bar(stacked=True)` | Stacked categorical bars |
+| Scatter | `mark_scatter()` | X-Y scatter plot |
+| Slope | `mark_slope()` | Compare two time points |
+| Marimekko | `mark_marimekko()` | Mosaic chart |
+| Map | `mark_map()` | World choropleth map |
+
+## Color Schemes for Maps
+
+Available schemes: "Reds", "Blues", "Greens", "Purples", "Oranges", "Greys",
+"BuGn", "BuPu", "GnBu", "OrRd", "PuBu", "PuBuGn", "PuRd", "RdPu", "YlGn",
+"YlGnBu", "YlOrBr", "YlOrRd"
+
+## Links
+
+- GitHub: https://github.com/owid/owid-grapher-py
+- PyPI: https://pypi.org/project/owid-grapher-py/
+- Examples: https://github.com/owid/owid-grapher-py/tree/master/examples
+- Quickstart notebook: https://colab.research.google.com/github/owid/owid-grapher-py/blob/master/examples/quickstart.ipynb
