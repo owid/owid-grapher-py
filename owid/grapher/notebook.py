@@ -527,4 +527,4 @@ def iter_jsonl(input_file: str) -> Iterator[dict]:
 
 
 if __name__ == "__main__":
-    main()  # type: ignore
+    main()

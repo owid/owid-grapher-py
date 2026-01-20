@@ -334,7 +334,7 @@ class Chart:
     def _add_chart_type(self, chart_type: str) -> None:
         """Add a chart type if not already present."""
         if chart_type not in self._state.chartTypes:
-            self._state.chartTypes.append(chart_type)  # type: ignore
+            self._state.chartTypes.append(chart_type)
         # First chart type added becomes the default tab
         if self._state.tab == "chart":  # Default value means not yet set
             self._state.tab = _CHART_TYPE_TO_TAB.get(chart_type, "chart")  # type: ignore
@@ -690,7 +690,7 @@ class Chart:
     def _get_primary_chart_type(self) -> "ChartType":
         """Get the primary chart type (first in the list, or LineChart as default)."""
         if self._state.chartTypes:
-            return self._state.chartTypes[0]  # type: ignore
+            return self._state.chartTypes[0]
         return "LineChart"
 
     def _prepare_data(
@@ -895,7 +895,7 @@ class Chart:
         """Build GrapherState configuration dict by merging stored config with computed values."""
         # Default to LineChart if no chart types specified
         if not self._state.chartTypes:
-            self._state.chartTypes = ["LineChart"]  # type: ignore
+            self._state.chartTypes = ["LineChart"]
 
         chart_type = self._get_primary_chart_type()
         is_scatter = chart_type == "ScatterPlot"

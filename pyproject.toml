@@ -61,8 +61,21 @@ dev-dependencies = [
     "nbconvert>=7.16.6",
     "playwright>=1.40.0",
     "nest-asyncio>=1.5.0",
-    "ty>=0.0.4",
+    "ty==0.0.12",
 ]
+
+[tool.ty.src]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    ".git",
+    "**/.venv",
+    "**/.ipynb_checkpoints",
+    ".cachedir/",
+]
+
+[tool.ty.rules]
+invalid-argument-type = "ignore"
 
 [tool.ruff]
 lint.extend-select = ["I"]

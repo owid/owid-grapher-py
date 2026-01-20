@@ -38,7 +38,7 @@ make check
 # Run individual checks
 make check-formatting    # Check code formatting with ruff
 make lint                # Run ruff linting
-make check-typing        # Run pyright type checking
+make check-typing        # Run ty type checking
 make unittest            # Run pytest tests
 
 # Run tests on file changes
@@ -156,17 +156,20 @@ The `owid.site` module fetches live chart data:
 
 ## Type Checking
 
-Uses **pyright** for static type checking. Configuration in `pyproject.toml`:
+Uses **ty** for static type checking. Configuration in `pyproject.toml`:
 
 ```toml
-[tool.pyright]
-include = ["owid", "tests"]
+[tool.ty.src]
+exclude = [...]
+
+[tool.ty.rules]
+invalid-argument-type = "ignore"
 ```
 
 ## Code Quality Tools
 
 - **ruff** - Linting and formatting
-- **pyright** - Static type checking
+- **ty** - Static type checking
 - **pytest** - Unit testing
 
 ## Key Dependencies
