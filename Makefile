@@ -19,4 +19,4 @@ docs.serve: .venv
 
 llms.txt:
 	@echo '==> Generating llms-full.txt for LLM documentation'
-	claude -p "Run /llm-docs-optimizer with default settings to generate llms-full.txt" --allowedTools "Skill,Read,Write,Glob,Grep,Bash" -y
+	claude -p "Run /llm-docs-optimizer with default settings to generate llms-full.txt" --allowedTools "Skill,Read,Write,Glob,Grep,Bash"
