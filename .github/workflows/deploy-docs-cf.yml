@@ -33,7 +33,7 @@ jobs:
 
       - name: Override site_url for the Cloudflare build
         run: |
-          sed -i 's|^site_url = .*|site_url = "https://docs-cf.owid.io/projects/owid-grapher-py/"|' zensical.toml
+          sed -i 's|^site_url = .*|site_url = "https://docs.owid.io/projects/owid-grapher-py/"|' zensical.toml
 
       - name: Build docs
         run: make docs.build
