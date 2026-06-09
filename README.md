@@ -455,6 +455,9 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.3.3`
+    - Support multi-indicator charts: `encode()` and `plot()` accept a list of `y` columns, drawing each as a separate series (line/area charts)
+    - Default the selection for multi-indicator charts to a single reference entity (`World`, else the best-covered entities) to avoid entities × indicators overload
 - `0.3.2`
     - Add `to_html()` method for getting standalone HTML
 - `0.3.1`

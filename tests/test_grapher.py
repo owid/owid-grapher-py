@@ -5,6 +5,7 @@
 #
 
 import pandas as pd
+import pytest
 
 import owid.grapher as gr
 
@@ -664,3 +665,85 @@ def test_plot_wrapper_entity_selection():
 
     # Check entity selection
     assert config["selectedEntityNames"] == ["USA", "UK"]
+
+
+def test_multi_indicator_line_chart():
+    # Several same-unit indicators drawn as separate series on one chart.
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010, 2020],
+            "entity": ["World"] * 3,
+            "coal": [40, 33, 26],
+            "gas": [20, 23, 26],
+            "renewables": [5, 16, 27],
+        }
+    )
+    ch = (
+        gr.Chart(df)
+        .mark_line()
+        .encode(x="year", y=["coal", "gas", "renewables"], entity="entity")
+    )
+    export = ch.export()
+    config = export["grapher_config"]
+
+    # All three indicators become y-slugs (one series each)
+    assert config["ySlugs"] == "coal gas renewables"
+    slugs = {c["slug"] for c in export["column_defs"]}
+    assert {"coal", "gas", "renewables"} <= slugs
+
+
+def test_multi_indicator_via_plot():
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010, 2020],
+            "entity": ["World"] * 3,
+            "coal": [40, 33, 26],
+            "gas": [20, 23, 26],
+        }
+    )
+    config = gr.plot(df, y=["coal", "gas"]).export()["grapher_config"]
+    assert config["ySlugs"] == "coal gas"
+
+
+def test_multi_indicator_defaults_to_world():
+    # Many entities x several indicators is unreadable, so default to a reference entity.
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010] * 3,
+            "entity": ["USA", "USA", "UK", "UK", "World", "World"],
+            "a": [1, 2, 3, 4, 5, 6],
+            "b": [6, 5, 4, 3, 2, 1],
+        }
+    )
+    ch = gr.Chart(df).mark_line().encode(x="year", y=["a", "b"], entity="entity")
+    config = ch.export()["grapher_config"]
+    assert config["selectedEntityNames"] == ["World"]
+
+
+def test_single_indicator_selection_unchanged():
+    # Single-y behaviour must be unaffected: still selects all entities by default.
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010] * 2,
+            "entity": ["USA", "USA", "UK", "UK"],
+            "population": [1, 2, 3, 4],
+        }
+    )
+    ch = gr.Chart(df).mark_line().encode(x="year", y="population", entity="entity")
+    config = ch.export()["grapher_config"]
+    assert set(config["selectedEntityNames"]) == {"USA", "UK"}
+
+
+def test_multi_indicator_rejected_for_bar():
+    # A list of y on a discrete-bar chart should fail loudly, not silently drop columns.
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010],
+            "entity": ["World", "World"],
+            "a": [1, 2],
+            "b": [3, 4],
+        }
+    )
+    ch = gr.Chart(df).mark_bar().encode(x="year", y=["a", "b"], entity="entity")
+    with pytest.raises(ValueError):
+        ch.export()

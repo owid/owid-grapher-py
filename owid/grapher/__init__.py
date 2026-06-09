@@ -11,7 +11,7 @@ import re
 import string
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import pandas as pd
 from dateutil.parser import parse
@@ -106,6 +106,7 @@ class Chart:
         )
         self.x: Optional[str] = None
         self.y: Optional[str] = None
+        self.y_extra: List[str] = []  # additional y indicators (multi-indicator charts)
         self.y_lower: Optional[str] = None  # Lower bound for confidence intervals
         self.y_upper: Optional[str] = None  # Upper bound for confidence intervals
         self.entity: Optional[str] = None
@@ -121,7 +122,7 @@ class Chart:
     def encode(
         self,
         x: Optional[str] = None,
-        y: Optional[str] = None,
+        y: Optional[Union[str, List[str], Tuple[str, ...]]] = None,
         y_lower: Optional[str] = None,
         y_upper: Optional[str] = None,
         entity: Optional[str] = None,
@@ -139,8 +140,10 @@ class Chart:
         Args:
             x: Column name for x-axis. For line/bar charts, typically a time column
                 ('year', 'date'). For scatter plots, a numeric value column.
-            y: Column name for y-axis values to plot. For bar charts, can be the entity
-                column if you want entities on the y-axis.
+            y: Column name(s) for y-axis values to plot. Pass a list of columns to draw
+                several indicators as separate series on one chart (multi-indicator); they
+                share one y-axis, so use comparable/same-unit indicators. For bar charts,
+                can be the entity column if you want entities on the y-axis.
             y_lower: Column name for lower bound of confidence interval. When specified
                 along with y_upper, renders a shaded confidence band around the main line.
             y_upper: Column name for upper bound of confidence interval. When specified
@@ -185,7 +188,13 @@ class Chart:
             ```
         """
         self.x = x
-        self.y = y
+        # y may be a single column or a list of columns (multi-indicator → one series each)
+        if isinstance(y, (list, tuple)):
+            self.y = y[0] if len(y) else None
+            self.y_extra = list(y[1:])
+        else:
+            self.y = y
+            self.y_extra = []
         self.y_lower = y_lower
         self.y_upper = y_upper
         self.entity = entity
@@ -193,7 +202,7 @@ class Chart:
         self.size = size
 
         # fail early if there's been a typo
-        for col in [x, y, y_lower, y_upper, entity, color, size]:
+        for col in [x, self.y, *self.y_extra, y_lower, y_upper, entity, color, size]:
             if col and col not in self.data.columns:
                 raise ValueError(f"no such column: {col}")
 
@@ -746,6 +755,19 @@ class Chart:
         y_cols: List[str]
         selected_entities: List[str]
 
+        # Multi-indicator y only makes sense where series share a value axis (line/area).
+        # Scatter and discrete-bar charts would silently use just the first column, so
+        # reject a list there instead of dropping the rest.
+        if self.y_extra and chart_type in (
+            "ScatterPlot",
+            "DiscreteBar",
+            "StackedDiscreteBar",
+        ):
+            raise ValueError(
+                f"a list of y columns (multi-indicator) is supported for line/area "
+                f"charts, not {chart_type}"
+            )
+
         if chart_type == "ScatterPlot":
             y_cols = [x_col, y_col]  # Both are "value" columns for scatter
             if self.selection is None:
@@ -772,6 +794,9 @@ class Chart:
         else:
             # Line charts: x is time, y is value, entity is grouping
             y_cols = [y_col]
+            # Additional y indicators (multi-indicator charts) → one extra series each
+            for ey in self.y_extra:
+                y_cols.append(rename_map.get(ey, ey))
             # Add confidence interval columns if specified
             if self.y_lower:
                 y_lower_col = rename_map.get(self.y_lower, self.y_lower)
@@ -781,7 +806,14 @@ class Chart:
                 y_cols.append(y_upper_col)
             if self.selection is None:
                 if entity_col:
-                    selected_entities = list(df[entity_col].unique())
+                    # entities x indicators is unreadable with several indicators, so
+                    # default to a single reference entity instead of every entity.
+                    if self.y_extra:
+                        selected_entities = _default_multi_indicator_entities(
+                            df, entity_col
+                        )
+                    else:
+                        selected_entities = list(df[entity_col].unique())
                 else:
                     selected_entities = [y_col]  # Use column name as entity
             else:
@@ -1281,12 +1313,34 @@ PlotType = Literal["map", "line", "bar", "slope", "marimekko", "scatter", "stack
 VariableConfigDict = Dict[str, Any]
 
 
+def _default_multi_indicator_entities(
+    df: pd.DataFrame, entity_col: str, n: int = 5
+) -> List[str]:
+    """Pick a default entity selection for multi-indicator charts.
+
+    Showing every entity times every indicator is unreadable, so prefer a single
+    reference entity ("World") when present; otherwise fall back to the ``n`` entities
+    with the most data. Deterministic, so the same call always renders the same chart.
+    """
+    values = list(df[entity_col].dropna())
+    entities = list(dict.fromkeys(values))  # unique, preserving first-seen order
+    if "World" in entities:
+        return ["World"]
+    # rank by data coverage (row count), deterministic on ties via the entity name.
+    # done in plain Python to avoid pandas groupby/sort_values typing ambiguity.
+    counts: Dict[Any, int] = {}
+    for v in values:
+        counts[v] = counts.get(v, 0) + 1
+    ranked = sorted(entities, key=lambda e: (-counts[e], str(e)))
+    return ranked[:n]
+
+
 def plot(
     data: pd.DataFrame,
     *,
     # Column mappings
     x: str = "year",
-    y: str,
+    y: Union[str, List[str], Tuple[str, ...]],
     y_lower: Optional[str] = None,
     y_upper: Optional[str] = None,
     entity: str = "entity",
