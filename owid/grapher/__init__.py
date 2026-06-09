@@ -1309,17 +1309,17 @@ def _default_multi_indicator_entities(
     reference entity ("World") when present; otherwise fall back to the ``n`` entities
     with the most data. Deterministic, so the same call always renders the same chart.
     """
-    entities = list(df[entity_col].dropna().unique())
+    values = list(df[entity_col].dropna())
+    entities = list(dict.fromkeys(values))  # unique, preserving first-seen order
     if "World" in entities:
         return ["World"]
-    counts = (
-        df.dropna(subset=[entity_col])
-        .groupby(entity_col)
-        .size()
-        .sort_values(ascending=False, kind="mergesort")
-    )
-    chosen = list(counts.head(n).index)
-    return chosen or entities[:n]
+    # rank by data coverage (row count), deterministic on ties via the entity name.
+    # done in plain Python to avoid pandas groupby/sort_values typing ambiguity.
+    counts: Dict[Any, int] = {}
+    for v in values:
+        counts[v] = counts.get(v, 0) + 1
+    ranked = sorted(entities, key=lambda e: (-counts[e], str(e)))
+    return ranked[:n]
 
 
 def plot(
