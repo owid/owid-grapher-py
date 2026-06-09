@@ -5,6 +5,7 @@
 #
 
 import pandas as pd
+import pytest
 
 import owid.grapher as gr
 
@@ -731,3 +732,18 @@ def test_single_indicator_selection_unchanged():
     ch = gr.Chart(df).mark_line().encode(x="year", y="population", entity="entity")
     config = ch.export()["grapher_config"]
     assert set(config["selectedEntityNames"]) == {"USA", "UK"}
+
+
+def test_multi_indicator_rejected_for_bar():
+    # A list of y on a discrete-bar chart should fail loudly, not silently drop columns.
+    df = pd.DataFrame(
+        {
+            "year": [2000, 2010],
+            "entity": ["World", "World"],
+            "a": [1, 2],
+            "b": [3, 4],
+        }
+    )
+    ch = gr.Chart(df).mark_bar().encode(x="year", y=["a", "b"], entity="entity")
+    with pytest.raises(ValueError):
+        ch.export()

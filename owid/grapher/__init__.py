@@ -122,7 +122,7 @@ class Chart:
     def encode(
         self,
         x: Optional[str] = None,
-        y: Optional[Union[str, List[str]]] = None,
+        y: Optional[Union[str, List[str], Tuple[str, ...]]] = None,
         y_lower: Optional[str] = None,
         y_upper: Optional[str] = None,
         entity: Optional[str] = None,
@@ -755,6 +755,19 @@ class Chart:
         y_cols: List[str]
         selected_entities: List[str]
 
+        # Multi-indicator y only makes sense where series share a value axis (line/area).
+        # Scatter and discrete-bar charts would silently use just the first column, so
+        # reject a list there instead of dropping the rest.
+        if self.y_extra and chart_type in (
+            "ScatterPlot",
+            "DiscreteBar",
+            "StackedDiscreteBar",
+        ):
+            raise ValueError(
+                f"a list of y columns (multi-indicator) is supported for line/area "
+                f"charts, not {chart_type}"
+            )
+
         if chart_type == "ScatterPlot":
             y_cols = [x_col, y_col]  # Both are "value" columns for scatter
             if self.selection is None:
@@ -1327,7 +1340,7 @@ def plot(
     *,
     # Column mappings
     x: str = "year",
-    y: Union[str, List[str]],
+    y: Union[str, List[str], Tuple[str, ...]],
     y_lower: Optional[str] = None,
     y_upper: Optional[str] = None,
     entity: str = "entity",
