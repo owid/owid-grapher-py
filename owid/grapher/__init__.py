@@ -24,6 +24,7 @@ from owid.grapher.grapher_state import (  # noqa: F401 - re-exported for public 
     EntitySelectionMode,
     GrapherState,
     MapConfig,
+    MapRegionName,
 )
 from owid.grapher.utils import pruned_camel_json
 
@@ -433,6 +434,7 @@ class Chart:
         color_scheme: Optional[ColorSchemeName] = None,
         binning_strategy: Optional[BinningStrategy] = None,
         custom_numeric_values: Optional[List[float]] = None,
+        region: Optional["MapRegionName"] = None,
     ) -> "Chart":
         """Enable the map tab with optional configuration.
 
@@ -444,6 +446,9 @@ class Chart:
             color_scheme: Color scheme name (e.g., "Reds", "Blues", "YlOrRd")
             binning_strategy: How to bin values ("auto", "manual", "equalInterval", "quantiles")
             custom_numeric_values: Custom bin boundaries when using manual binning
+            region: Map region to focus on. Options: "World" (default), "Africa",
+                "NorthAmerica", "SouthAmerica", "Asia", "Europe", "Oceania".
+                This changes the map projection and viewport to zoom into a continent.
 
         Returns:
             Self for method chaining.
@@ -459,6 +464,9 @@ class Chart:
                 binning_strategy='manual',
                 custom_numeric_values=[0, 1000, 10000, 100000]
             ).encode(...)
+
+            # Map focused on Africa
+            Chart(df).mark_map(region="Africa").encode(...)
             ```
         """
         self._state.hasMapTab = True
@@ -468,7 +476,15 @@ class Chart:
             self._state.tab = "map"
 
         # Configure map options if any provided
-        if any([time_tolerance, color_scheme, binning_strategy, custom_numeric_values]):
+        if any(
+            [
+                time_tolerance,
+                color_scheme,
+                binning_strategy,
+                custom_numeric_values,
+                region,
+            ]
+        ):
             color_scale = ColorScaleConfig(
                 baseColorScheme=color_scheme,
                 binningStrategy=binning_strategy,
@@ -476,6 +492,7 @@ class Chart:
             )
             self._state.map = MapConfig(
                 timeTolerance=time_tolerance,
+                region=region,
                 colorScale=color_scale
                 if any([color_scheme, binning_strategy, custom_numeric_values])
                 else None,
@@ -1351,6 +1368,7 @@ def plot(
     # Map configuration
     color_scheme: Optional[ColorSchemeName] = None,
     custom_numeric_values: Optional[List[float]] = None,
+    region: Optional[MapRegionName] = None,
     # Labels
     title: Optional[str] = None,
     subtitle: Optional[str] = None,
@@ -1388,6 +1406,8 @@ def plot(
         color_scheme: Color scheme for map visualization (e.g., "GnBu", "Reds").
         custom_numeric_values: Custom bin boundaries for map legend.
             When provided, uses manual binning strategy automatically.
+        region: Map region to focus on. Options: "World" (default), "Africa",
+            "NorthAmerica", "SouthAmerica", "Asia", "Europe", "Oceania".
         title: Chart title.
         subtitle: Chart subtitle.
         source: Data source attribution (displayed as sourceDesc).
@@ -1481,6 +1501,7 @@ def plot(
             color_scheme=color_scheme,
             binning_strategy=binning_strategy,
             custom_numeric_values=custom_numeric_values,
+            region=region,
         )
 
     # If map should be the default tab, set it explicitly

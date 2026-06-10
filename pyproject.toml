@@ -45,6 +45,7 @@ Documentation = "https://github.com/owid/owid-grapher-py#readme"
 "Bug Tracker" = "https://github.com/owid/owid-grapher-py/issues"
 
 [tool.uv]
+exclude-newer = "3 days"
 dev-dependencies = [
     "watchdog>=2.1.3",
     "PyYAML>=5.4.1",
