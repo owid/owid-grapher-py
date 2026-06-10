@@ -9,7 +9,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-06-07T07:07:10.358405Z"
+exclude-newer = "2026-06-07T07:19:31.762542Z"
 exclude-newer-span = "P3D"
 
 [[package]]
@@ -1527,7 +1527,7 @@ wheels = [
 
 [[package]]
 name = "owid-grapher-py"
-version = "0.3.3"
+version = "0.3.4"
 source = { editable = "." }
 dependencies = [
     { name = "click" },

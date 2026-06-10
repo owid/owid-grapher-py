@@ -455,6 +455,8 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.3.4`
+    - Add `region` parameter to `mark_map()` and `plot()` to focus the map on a continent
 - `0.3.3`
     - Support multi-indicator charts: `encode()` and `plot()` accept a list of `y` columns, drawing each as a separate series (line/area charts)
     - Default the selection for multi-indicator charts to a single reference entity (`World`, else the best-covered entities) to avoid entities × indicators overload
