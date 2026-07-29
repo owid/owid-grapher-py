@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **owid-grapher-py** is a Python package for creating OWID (Our World in Data) charts in Jupyter notebooks. It provides a declarative API similar to Altair for building interactive charts that render using OWID's grapher JS library.
 
-**Status**: ✅ Working (experimental) - uses the GrapherState API from OWID's staging bundle.
+**Status**: ✅ Working (experimental) - uses the GrapherState API from OWID's production bundle on ourworldindata.org.
 
 ## Development Setup
 
@@ -91,7 +91,7 @@ The `Chart` class:
 The `generate_iframe()` function:
 1. Converts the internal config to CSV format via `_config_to_csv()`
 2. Builds GrapherState options via `_build_grapher_config()`
-3. Creates an iframe that loads OWID's JS bundle from `expose-grapher-state.owid.pages.dev`
+3. Creates an iframe that loads OWID's JS bundle from `ourworldindata.org`
 4. Uses `OwidTable` to parse CSV and `GrapherState` + `Grapher` React component to render
 
 #### Configuration System

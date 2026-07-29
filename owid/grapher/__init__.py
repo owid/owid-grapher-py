@@ -1227,7 +1227,7 @@ def _generate_chart_html(
     />
     <link
       rel="stylesheet"
-      href="https://expose-grapher-state.owid.pages.dev/assets/owid.css"
+      href="https://ourworldindata.org/assets/owid.css"
     />
     <style>
       body {{ margin: 0; padding: 0; }}
@@ -1237,7 +1237,7 @@ def _generate_chart_html(
   </head>
   <body>
     <figure id="grapher-container"></figure>
-    <script type="module" src="https://expose-grapher-state.owid.pages.dev/assets/owid.mjs"></script>
+    <script type="module" src="https://ourworldindata.org/assets/owid.mjs"></script>
     <script type="module">
       // Wait for the module to load
       await new Promise((resolve) => setTimeout(resolve, 500));
