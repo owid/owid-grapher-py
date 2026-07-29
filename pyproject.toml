@@ -1,6 +1,6 @@
 [project]
 name = "owid-grapher-py"
-version = "0.3.4"
+version = "0.3.5"
 description = "OWID charts for rendering in Jupyter notebooks."
 readme = "README.md"
 license = { text = "MIT" }
@@ -25,6 +25,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Framework :: Jupyter",
     "Topic :: Scientific/Engineering :: Visualization",
 ]
