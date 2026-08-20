@@ -336,15 +336,15 @@ def test_scatter_plot_iframe_with_units():
     # Get the iframe HTML
     html = ch._repr_html_()
 
-    # Check that columnDefs is present in the HTML
-    assert "const columnDefs" in html
+    # Check that columnDefs is passed to the loader
+    assert '"columnDefs"' in html
 
     # Check that units are in the columnDefs
     assert '"unit": "$"' in html
     assert '"unit": "years"' in html
 
-    # Check that OwidTable is called with columnDefs
-    assert "new OwidTable(csvData, columnDefs)" in html
+    # Check that the chart is built through the Grapher package's loader
+    assert "GrapherLoader.fromCsv(" in html
 
 
 def test_axis_scale_configuration():

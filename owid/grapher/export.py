@@ -80,12 +80,7 @@ async def _export_chart_async(
     column_defs = export_data["column_defs"]
     grapher_config = export_data["grapher_config"]
 
-    # Escape backticks and other special chars in CSV for JS template literal
-    csv_data_escaped = csv_data.replace("\\", "\\\\")
-    csv_data_escaped = csv_data_escaped.replace("`", "\\`")
-    csv_data_escaped = csv_data_escaped.replace("${", "\\${")
-
-    html = _generate_export_html(csv_data_escaped, column_defs, grapher_config)
+    html = _generate_export_html(csv_data, column_defs, grapher_config)
 
     # Create a temporary HTML file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
@@ -96,7 +91,9 @@ async def _export_chart_async(
         assert _async_playwright is not None  # Already checked by _check_playwright
         async with _async_playwright() as p:
             browser = await p.chromium.launch()
-            page = await browser.new_page()
+            # The chart fills its container, which fills the viewport, so the
+            # viewport size decides the exported chart's proportions.
+            page = await browser.new_page(viewport={"width": 850, "height": 600})
 
             # Navigate to the HTML file
             await page.goto(f"file://{html_path}")

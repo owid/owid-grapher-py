@@ -6,7 +6,16 @@ Create interactive [Our World in Data](https://ourworldindata.org) charts in Jup
 
 ✅ Working (experimental)
 
-This package uses the OWID Grapher library to render interactive charts. The API may change as OWID's internal APIs evolve.
+Charts are rendered by the [`@ourworldindata/grapher`](https://github.com/owid/owid-grapher/tree/master/packages/%40ourworldindata/grapher)
+npm package, whose standalone bundle is loaded straight from OWID's package host.
+
+> [!IMPORTANT]
+> That host is currently only reachable from OWID's Tailnet, so charts render for
+> OWID staff only. This will be fixed once the package is published publicly; until
+> then the package is not releasable to PyPI. Point `OWID_GRAPHER_BUNDLE_URL` at
+> another host serving the package's `dist/` files to render elsewhere.
+
+The API may change as OWID's internal APIs evolve.
 
 ## Requirements
 
@@ -455,6 +464,8 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- unreleased
+    - Render charts with the `@ourworldindata/grapher` npm package (`GrapherLoader`) instead of the JS bundle scraped from ourworldindata.org
 - `0.3.5`
     - Support Python 3.13 and 3.14 (tested in CI)
 - `0.3.4`

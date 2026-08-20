@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **owid-grapher-py** is a Python package for creating OWID (Our World in Data) charts in Jupyter notebooks. It provides a declarative API similar to Altair for building interactive charts that render using OWID's grapher JS library.
 
-**Status**: ✅ Working (experimental) - uses the GrapherState API from OWID's production bundle on ourworldindata.org.
+**Status**: ✅ Working (experimental) - renders with the `@ourworldindata/grapher` npm package, loaded as a standalone bundle from OWID's package host. That host is behind Tailscale until the package is published publicly, so charts only render for people on OWID's Tailnet.
 
 ## Development Setup
 
@@ -91,8 +91,15 @@ The `Chart` class:
 The `generate_iframe()` function:
 1. Converts the internal config to CSV format via `_config_to_csv()`
 2. Builds GrapherState options via `_build_grapher_config()`
-3. Creates an iframe that loads OWID's JS bundle from `ourworldindata.org`
-4. Uses `OwidTable` to parse CSV and `GrapherState` + `Grapher` React component to render
+3. Creates an iframe that loads the Grapher package's `grapher.css` and
+   `grapher.standalone.min.js` (React included) from `GRAPHER_BUNDLE_URL`
+4. Hands config, CSV and column defs to `GrapherLoader.fromCsv(...).mount(container)`
+
+`GRAPHER_BUNDLE_URL` defaults to the pinned version on OWID's package host and can be
+overridden with the `OWID_GRAPHER_BUNDLE_URL` environment variable (e.g. to point at a
+locally served `dist/`). Bumping the Grapher version means changing `GRAPHER_VERSION`
+in `owid/grapher/__init__.py`. The package's own docs live in the owid-grapher repo at
+`packages/@ourworldindata/grapher/readme.md`.
 
 #### Configuration System
 

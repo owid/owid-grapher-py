@@ -6,6 +6,7 @@
 
 import datetime as dt
 import json
+import os
 import random
 import re
 import string
@@ -29,6 +30,17 @@ from owid.grapher.grapher_state import (  # noqa: F401 - re-exported for public 
 from owid.grapher.utils import pruned_camel_json
 
 DATE_DISPLAY = {"yearIsDay": True, "zeroDay": "1970-01-01"}
+
+# Grapher ships as an npm package; we load its standalone bundle (which has
+# React baked in) straight from OWID's package host. That host is only
+# reachable from OWID's Tailnet until the package is published publicly, so the
+# base URL can be pointed elsewhere -- a local `dist/` server, a future public
+# CDN -- without touching the code.
+GRAPHER_VERSION = "v0.1.0"
+GRAPHER_BUNDLE_URL = os.environ.get(
+    "OWID_GRAPHER_BUNDLE_URL",
+    f"https://owid-packages.tail6e23.ts.net/ourworldindata/grapher/{GRAPHER_VERSION}",
+).rstrip("/")
 
 # Characters that are safe in OWID slugs (alphanumeric, underscore, hyphen)
 _UNSAFE_SLUG_CHARS = re.compile(r"[^a-zA-Z0-9_\-]")
@@ -1162,7 +1174,6 @@ def _generate_chart_html(
     *,
     expose_state: bool = False,
     hide_ui_elements: bool = False,
-    show_error_div: bool = False,
 ) -> str:
     """Generate HTML page for rendering the chart.
 
@@ -1170,12 +1181,12 @@ def _generate_chart_html(
     for Jupyter rendering and _generate_export_html() for headless export.
 
     Args:
-        csv_data: CSV string of the data (should be escaped for JS template literal)
+        csv_data: CSV string of the data
         column_defs: List of column definition dicts for OwidTable
         grapher_config: Dict of GrapherState configuration
-        expose_state: If True, expose grapherState globally for export scripts
+        expose_state: If True, expose the loader's grapherState globally for
+            export scripts, together with a window.grapherReady flag
         hide_ui_elements: If True, hide ActionButtons and learn-more-about-data
-        show_error_div: If True, show error div on initialization failure
 
     Returns:
         Complete HTML document string.
@@ -1194,75 +1205,56 @@ def _generate_chart_html(
       .ActionButtons { display: none !important; }
       .learn-more-about-data { display: none !important; }"""
 
-    # Error div CSS
-    error_css = ""
-    if show_error_div:
-        error_css = """
-      .error { color: red; padding: 20px; background: #fee; border-radius: 5px; }"""
-
-    # Error handling JS
-    error_js = ""
-    if show_error_div:
-        error_js = """
-        container.innerHTML = '<div class="error">Required exports not available. Check console.</div>';"""
-
     # Expose state JS for export
     expose_state_js = ""
-    ready_signal_js = ""
     if expose_state:
         expose_state_js = """
-      // Expose grapherState globally for the export script
-      window.grapherState = grapherState;"""
-        ready_signal_js = """
-      // Signal that rendering is complete
+      // Hand the chart state to the export script, signalling readiness once
+      // the data has loaded and the chart has had a frame to render.
+      window.grapherState = loader.grapherState;
+      await loader.ready;
+      await new Promise(requestAnimationFrame);
       window.grapherReady = true;"""
+
+    # Everything GrapherLoader needs, as one JSON blob. "</" is escaped so a
+    # "</script>" inside the data can't close the script element early.
+    loader_options = json.dumps(
+        {"config": grapher_config, "csv": csv_data, "columnDefs": column_defs},
+        indent=2,
+    ).replace("</", "<\\/")
 
     return f"""<!DOCTYPE html>
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link
-      href="https://fonts.googleapis.com/css?family=Lato:300,400,400i,700,700i|Playfair+Display:400,700&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      rel="stylesheet"
-      href="https://ourworldindata.org/assets/owid.css"
-    />
+    <link rel="stylesheet" href="https://ourworldindata.org/fonts.css" />
+    <link rel="stylesheet" href="{GRAPHER_BUNDLE_URL}/grapher.css" />
     <style>
-      body {{ margin: 0; padding: 0; }}
-      figure {{ width: 100%; height: 100%; margin: 0; }}{error_css}{hide_ui_css}
+      html, body {{ height: 100%; margin: 0; padding: 0; }}
+      figure {{ width: 100%; height: 100%; margin: 0; }}
+      .error {{ color: red; padding: 20px; background: #fee; border-radius: 5px; }}{hide_ui_css}
       {hide_sources_css}
     </style>
   </head>
   <body>
     <figure id="grapher-container"></figure>
-    <script type="module" src="https://ourworldindata.org/assets/owid.mjs"></script>
     <script type="module">
-      // Wait for the module to load
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const {{ Grapher, GrapherState, OwidTable, React, createRoot }} = window;
       const container = document.getElementById("grapher-container");
 
-      if (!GrapherState || !OwidTable || !React || !createRoot) {{{error_js}
-        throw new Error("Required exports not available");
+      let GrapherLoader;
+      try {{
+        ({{ GrapherLoader }} = await import(
+          "{GRAPHER_BUNDLE_URL}/grapher.standalone.min.js"
+        ));
+      }} catch (error) {{
+        container.innerHTML =
+          '<div class="error">Could not load Grapher from {GRAPHER_BUNDLE_URL} ' +
+          '- while the npm package is private, that host is only reachable ' +
+          'from the OWID Tailnet.</div>';
+        throw error;
       }}
 
-      const csvData = `{csv_data}`;
-      const columnDefs = {json.dumps(column_defs)};
-      const table = new OwidTable(csvData, columnDefs);
-
-      const grapherState = new GrapherState({{
-        table: table,
-        ...{json.dumps(grapher_config)},
-        isConfigReady: true,
-        isDataReady: true,
-      }});
-{expose_state_js}
-      const reactRoot = createRoot(container);
-      reactRoot.render(React.createElement(Grapher, {{ grapherState }}));
-{ready_signal_js}
+      const loader = GrapherLoader.fromCsv({loader_options}).mount(container);{expose_state_js}
     </script>
   </body>
 </html>"""
@@ -1288,7 +1280,6 @@ def generate_iframe(
         column_defs,
         grapher_config,
         hide_ui_elements=True,
-        show_error_div=True,
     )
 
     # Escape for the outer template literal (order matters: backslash first)
