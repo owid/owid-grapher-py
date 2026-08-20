@@ -8,3 +8,4 @@ ai/*.ipynb
 
 
 site/
+.cachedir/

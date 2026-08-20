@@ -100,7 +100,7 @@ from owid.grapher import Chart
 import pandas as pd
 
 df = pd.DataFrame({...})
-chart = Chart(df).mark_line()
+chart = Chart(df, config={"title": "..."})
 ```
 ````
 

@@ -32,11 +32,9 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "dataclasses-json>=0.6.7",
     "requests>=2.26.0",
     "pandas>=2.2.3",
     "python-dateutil>=2.8.1",
-    "jsonschema>=3.2.0",
     "click>=8.0.0",
 ]
 
@@ -77,8 +75,6 @@ exclude = [
     ".cachedir/",
 ]
 
-[tool.ty.rules]
-invalid-argument-type = "ignore"
 
 [tool.ruff]
 lint.extend-select = ["I"]

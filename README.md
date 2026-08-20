@@ -2,11 +2,24 @@
 
 Create interactive [Our World in Data](https://ourworldindata.org) charts in Jupyter notebooks.
 
+```python
+from owid.grapher import Chart
+
+Chart(df, config={"title": "Life expectancy at birth", "hasMapTab": True})
+```
+
 ## Status
 
 ✅ Working (experimental)
 
-This package uses the OWID Grapher library to render interactive charts. The API may change as OWID's internal APIs evolve.
+Charts are rendered by the [`@ourworldindata/grapher`](https://github.com/owid/owid-grapher/tree/master/packages/%40ourworldindata/grapher)
+npm package, whose standalone bundle is loaded straight from OWID's package host.
+
+> [!IMPORTANT]
+> That host is currently only reachable from OWID's Tailnet, so charts render for
+> OWID staff only. This will be fixed once the package is published publicly; until
+> then the package is not releasable to PyPI. Point `OWID_GRAPHER_BUNDLE_URL` at
+> another host serving the package's `dist/` files to render elsewhere.
 
 ## Requirements
 
@@ -19,442 +32,254 @@ This package uses the OWID Grapher library to render interactive charts. The API
 pip install owid-grapher-py
 ```
 
-## Quick Start
-
-See the [quickstart notebook in Colab](https://colab.research.google.com/github/owid/owid-grapher-py/blob/master/examples/quickstart.ipynb) for a comprehensive walkthrough with examples.
-
-For advanced examples replicating real OWID charts, see:
-- [Top 5 charts (simple API)](https://colab.research.google.com/github/owid/owid-grapher-py/blob/master/examples/top_charts_2025_simple.ipynb) - using the `plot()` function
-- [Top 5 charts (full API)](https://colab.research.google.com/github/owid/owid-grapher-py/blob/master/examples/top_charts_2025.ipynb) - using the `Chart` class with method chaining
-
-### Simple API with `plot()`
-
-The simplest way to create a chart is with the `plot()` function:
+## Quick start
 
 ```python
 import pandas as pd
-from owid.grapher import plot
-
-df = pd.read_csv("https://ourworldindata.org/grapher/gdp-per-capita-worldbank.csv?useColumnShortNames=true")
-df = df.rename(columns={"Entity": "entity", "Year": "year"})
-
-plot(
-    df,
-    y="ny_gdp_pcap_pp_kd",
-    types=["map", "line", "bar"],
-    color_scheme="GnBu",
-    custom_numeric_values=[0, 1000, 2000, 5000, 10000, 20000, 50000, 100000],
-    unit="$",
-    title="GDP per capita",
-    entities=["United States", "China", "India"],
-    scale_control=True,
-    entity_control=True,
-)
-```
-
-### Full API with `Chart`
-
-For more control, use the `Chart` class with method chaining (inspired by Altair):
-
-```python
 from owid.grapher import Chart
 
-# Create sample data
 df = pd.DataFrame({
-    'year': [2000, 2005, 2010, 2015, 2020] * 3,
-    'country': ['Australia'] * 5 + ['New Zealand'] * 5 + ['Japan'] * 5,
-    'population': [19.2, 20.4, 22.0, 23.8, 25.7,
-                   3.9, 4.1, 4.4, 4.6, 5.1,
-                   126.8, 127.8, 128.1, 127.1, 125.8]
+    "year": [2000, 2010, 2020] * 2,
+    "entity": ["France"] * 3 + ["Japan"] * 3,
+    "population": [59.0, 63.0, 65.0, 127.0, 128.0, 126.0],
 })
 
-# Create an interactive line chart
-Chart(df).mark_line().encode(
-    x='year',
-    y='population',
-    entity='country'
-).label(title='Population Over Time')
-```
-
-## The `plot()` Function
-
-The `plot()` function provides a simple, single-call API for creating charts:
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `y` | Y-axis column name | (required) |
-| `x` | X-axis column name | `"year"` |
-| `entity` | Entity grouping column | `"entity"` |
-| `y_lower`, `y_upper` | Confidence interval columns | `None` |
-| `color`, `size` | Scatter plot encodings | `None` |
-| `types` | List of plot types: `"map"`, `"line"`, `"bar"`, `"slope"`, `"marimekko"`, `"scatter"`, `"stacked-bar"` | `["line", "bar"]` |
-| `color_scheme` | Map color scheme (e.g., `"GnBu"`, `"Reds"`) | `None` |
-| `custom_numeric_values` | Custom bin boundaries for map | `None` |
-| `title`, `subtitle`, `source`, `note` | Chart labels | `None` |
-| `unit` | Y-axis unit suffix | `None` |
-| `variables` | Dict of column metadata (name, color, etc.) | `None` |
-| `entities` | Pre-selected entities | `None` |
-| `timespan` | Time range filter | `None` |
-| `scale_control` | Show log/linear toggle | `False` |
-| `entity_control` | Show entity picker | `False` |
-| `entity_mode` | `"add-country"`, `"change-country"`, or `"disabled"` | `None` |
-| `allow_relative` | Show relative/absolute toggle | `False` |
-
-### Confidence Intervals with `plot()`
-
-```python
-plot(
+Chart(
     df,
-    y="temperature",
-    y_lower="temperature_lower",
-    y_upper="temperature_upper",
-    types=["line"],
-    unit="°C",
-    variables={
-        "temperature": {"name": "Average", "color": "#ca2628"},
-        "temperature_lower": {"name": "Lower bound (95% CI)", "color": "#c8c8c8"},
-        "temperature_upper": {"name": "Upper bound (95% CI)", "color": "#c8c8c8"},
+    config={"title": "Population", "chartTypes": ["LineChart"]},
+    columns={"population": {"name": "Population", "shortUnit": " million"}},
+)
+```
+
+Every chart type this package can draw, next to the code that draws it, is in
+[`examples/showcase.py`](examples/showcase.py):
+
+```bash
+.venv/bin/python examples/showcase.py && open /tmp/owid-grapher-py-showcase.html
+```
+
+## How it works
+
+This package is a thin proxy over Grapher, not an API of its own. `config` is
+Grapher's [chart config](https://files.ourworldindata.org/schemas/) — the same
+JSON OWID stores for every chart on its site — and `columns` is Grapher's column
+metadata. Both are passed to the JavaScript library unchanged, so:
+
+- **Every key Grapher has is available**, spelled the way Grapher spells it, with
+  the [chart editor](https://ourworldindata.org/grapher), the JSON schema and the
+  package's [readme](https://github.com/owid/owid-grapher/blob/master/packages/%40ourworldindata/grapher/readme.md)
+  all serving as documentation.
+- **Any published OWID chart's config can be pasted in** (append `.config.json` to
+  a chart URL to fetch one).
+- **Type checkers and editors know the keys**: `config` is typed as
+  `GrapherConfig`, generated from the published schema, so a wrong key or an
+  invalid enum value is an error before you run anything. Unknown keys are
+  rejected at runtime too, with a suggestion.
+
+What the Python side does is turn a DataFrame into what Grapher reads: it renames
+the entity column to `entityName`, works out whether time is years or dates, and
+selects the frame's entities if you haven't said which to select.
+
+```python
+Chart(
+    df,
+    config={...},         # Grapher's chart config
+    columns={...},        # Grapher's column metadata, keyed by column name
+    entity="country",     # which column holds entities (default: found by name)
+    time="year",          # which column holds time (default: found by name)
+    height=600,           # how tall the chart is in a notebook
+)
+```
+
+`entity` and `time` are found automatically when they're named `entityName`,
+`entity`, `country` or `location`, and `year`, `date` or `day`.
+
+## Chart types
+
+`chartTypes` picks the chart; Grapher opens on the first entry, and gives the
+reader tabs when there is more than one.
+
+```python
+# A line chart, a bar chart, and a map, all in one chart
+Chart(df, config={
+    "chartTypes": ["LineChart", "DiscreteBar"],
+    "hasMapTab": True,
+    "tab": "map",  # which view it opens on
+})
+```
+
+The types Grapher draws: `LineChart`, `DiscreteBar`, `StackedDiscreteBar`,
+`StackedArea`, `StackedBar`, `ScatterPlot`, `SlopeChart`, `Marimekko`,
+`Dumbbell`.
+
+### Scatter plots
+
+A scatter reads its axes and its point colour and size from named columns:
+
+```python
+Chart(df, config={
+    "chartTypes": ["ScatterPlot"],
+    "xSlug": "gdp_per_capita",
+    "ySlugs": "life_expectancy",
+    "colorSlug": "region",
+    "sizeSlug": "population",
+    "minTime": "latest",              # one year; drag the timeline for more
+    "xAxis": {"scaleType": "log"},
+})
+```
+
+### Maps
+
+```python
+Chart(df, config={
+    "hasMapTab": True,
+    "tab": "map",
+    "map": {
+        "colorScale": {
+            "baseColorScheme": "YlGnBu",
+            "binningStrategy": "manual",
+            "customNumericValues": [60, 65, 70, 75, 80, 85],
+        },
+        "region": "Africa",           # zoom the projection to a continent
+        "timeTolerance": 5,
     },
-    entity_mode="change-country",
-)
+})
 ```
 
-## Chart Types (Full API)
+### Dates
 
-### Line Chart
+A column of dates needs no configuration — Grapher gives it a date timeline.
+But its *time values* are day offsets from 2020-01-21 (Grapher's epoch), so a
+date written as itself in the config would be read as a year:
 
 ```python
-Chart(df).mark_line().encode(
-    x='year',
-    y='population',
-    entity='country'  # group by country
-).label(title='Population by Country')
+from owid.grapher import Chart, day_number
+
+Chart(df, config={
+    "minTime": day_number("2021-06-15"),
+    "maxTime": day_number("2021-07-15"),
+})
 ```
 
-### Bar Chart
+### Which columns to plot
+
+Grapher plots every numeric column unless you say otherwise. `ySlugs` is a
+space-separated list, in Grapher's own spelling:
 
 ```python
-# Simple bar chart
-Chart(df_2020).mark_bar().encode(
-    x='population',
-    y='country'
-).label(title='Population in 2020')
-
-# Stacked bar chart
-Chart(df).mark_bar(stacked=True).encode(
-    x='energy_generated',
-    y='country',
-    entity='energy_source'
-)
+Chart(df, config={"ySlugs": "anomaly anomaly_lower anomaly_upper"})
 ```
 
-### Scatter Plot
+That is also how you draw a confidence band: three series, with the bounds given
+a muted colour through `columns`.
+
+## Column metadata
+
+`columns` carries what Grapher shows around the data — the display name and unit,
+the series colour, and the source information behind *Learn more about this
+data*:
 
 ```python
-# Basic scatter plot
-Chart(df).mark_scatter().encode(
-    x='gdp_per_capita',
-    y='life_expectancy'
-).label(title='GDP vs Life Expectancy')
-
-# Scatter plot with entity grouping
-Chart(df).mark_scatter().encode(
-    x='gdp_per_capita',
-    y='life_expectancy',
-    entity='country'  # group by country
-).label(title='GDP vs Life Expectancy by Country')
-
-# Scatter plot with color and size encoding
-Chart(df).mark_scatter().encode(
-    x='gdp_per_capita',
-    y='life_expectancy',
-    entity='country',
-    color='continent',  # color by a different variable
-    size='population'   # size bubbles by population
-).label(title='GDP vs Life Expectancy')
-```
-
-### Map View
-
-```python
-# Enable map tab with mark_map()
-Chart(df).mark_line().mark_map().encode(
-    x='year',
-    y='population',
-    entity='country'
-)
-
-# Configure map with color scheme and binning
-Chart(df).mark_line().mark_map(
-    color_scheme='OrRd',          # Color scheme (e.g., 'OrRd', 'BuGn', 'YlOrRd')
-    binning_strategy='quantiles'  # How to bin values ('auto', 'manual', 'equalInterval', 'quantiles')
-).encode(
-    x='year',
-    y='population',
-    entity='country'
-)
-
-# Set map as the default view
-Chart(df).mark_line().mark_map().show('map').encode(
-    x='year',
-    y='population',
-    entity='country'
-)
-```
-
-### Confidence Intervals
-
-```python
-# Line chart with shaded uncertainty band
-Chart(df).mark_line().encode(
-    x='year',
-    y='temperature',
-    y_lower='temperature_low',   # Lower bound column
-    y_upper='temperature_high',  # Upper bound column
-    entity='region'
-)
-```
-
-## Labels
-
-```python
-Chart(df).mark_line().encode(
-    x='year',
-    y='population',
-    entity='country'
-).label(
-    title='Population Trends',
-    subtitle='Select countries to compare',
-    note='Data is illustrative',
-    source_desc='Sample data'
-)
-```
-
-## Axis Configuration
-
-```python
-# Configure individual axes
-Chart(df).mark_scatter().encode(
-    x='gdp_per_capita',
-    y='life_expectancy',
-    entity='country'
-).xaxis(
-    label='GDP per Capita',
-    unit='$',
-    scale='log',              # Use logarithmic scale
-    scale_control=True        # Allow user to toggle log/linear
-).yaxis(
-    label='Life Expectancy',
-    unit='years'
-)
-
-# Or configure both axes at once
-Chart(df).mark_scatter().encode(
-    x='gdp_per_capita',
-    y='life_expectancy',
-    entity='country'
-).axis(
-    x_label='GDP per Capita',
-    y_label='Life Expectancy',
-    x_unit='$',
-    y_unit='years',
-    x_scale='log',
-    x_scale_control=True
-)
+Chart(df, columns={
+    "emissions": {
+        "name": "Annual CO₂ emissions",
+        "unit": "billion tonnes",
+        "shortUnit": "Gt",                     # what axis ticks show
+        "descriptionShort": "Emissions from fossil fuels and industry.",
+        "descriptionKey": "Territorial emissions, excluding land use change.",
+        "sourceName": "Global Carbon Budget (2024)",
+        "sourceLink": "https://globalcarbonbudget.org",
+        "origins": [{
+            "producer": "Global Carbon Project",
+            "title": "Global Carbon Budget",
+            "citationFull": "Global Carbon Budget (2024).",
+        }],
+    },
+})
 ```
 
 ## Interactivity
 
-```python
-# Enable relative mode toggle
-Chart(...).interact(allow_relative=True)
-
-# Enable log/linear scale toggle
-Chart(...).interact(scale_control=True)
-
-# Enable country/entity picker
-Chart(...).interact(entity_control=True)
-
-# Single entity mode (useful for charts with multiple lines per entity, e.g., confidence intervals)
-Chart(...).interact(entity_mode='change-country')
-
-# Combine multiple options
-Chart(df).mark_line().encode(
-    x='year', y='population', entity='country'
-).interact(
-    allow_relative=True,
-    entity_control=True
-)
-```
-
-## Data Selection
+The controls are config, like everything else:
 
 ```python
-# Select specific entities and time range
-Chart(df).mark_line().encode(
-    x='year', y='population', entity='country'
-).select(
-    entities=['Australia', 'Japan'],
-    timespan=(2000, 2015)
-)
+Chart(df, config={
+    "addCountryMode": "add-country",           # or "change-country", "disabled"
+    "hideRelativeToggle": False,               # show the relative-change toggle
+    "yAxis": {"canChangeScaleType": True},     # show the log/linear switch
+    "selectedEntityNames": ["France", "Japan"],
+    "minTime": 2000,
+    "maxTime": 2020,
+})
 ```
 
-## Transforms
+## Replicating a published OWID chart
+
+Because `config` is Grapher's own format, a published chart can be replayed over
+your own data by fetching its config and dropping the keys that only mean
+something on the site:
 
 ```python
-# Plot relative change
-Chart(...).transform(relative=True)
+import requests
+from owid.grapher import Chart
+from owid.grapher.notebook import local_config
+
+published = requests.get(
+    "https://ourworldindata.org/grapher/life-expectancy.config.json"
+).json()
+
+Chart(df, config=local_config(published, df))
 ```
 
-## Filtering
+`owid.site` fetches the data of published charts, and
+`owid.grapher.notebook.generate_notebook()` writes a whole notebook that
+recreates one.
+
+## Exporting charts
 
 ```python
-# Only show entities that have data for all dimensions
-# Useful for scatter plots where you need both x and y values
-Chart(df).mark_scatter().encode(
-    x='gdp_per_capita',
-    y='life_expectancy',
-    entity='country'
-).filter(matching_entities_only=True)
+chart = Chart(df, config={"title": "Population"})
+
+chart.save_png("chart.png")          # needs: pip install playwright
+chart.save_svg("chart.svg")          #        playwright install chromium
+
+open("chart.html", "w").write(chart.to_html())   # standalone HTML page
+
+chart.export()   # the CSV, column defs and config handed to Grapher
 ```
-
-## Variable Metadata
-
-Configure display names, colors, and documentation for data columns:
-
-```python
-Chart(df).mark_line().encode(
-    x='year',
-    y='co2_emissions',
-    entity='country'
-).variable(
-    'co2_emissions',
-    name='CO₂ emissions',
-    unit='tonnes',
-    color='#ca2628',
-    description_short='Annual carbon dioxide emissions'
-)
-```
-
-## Exporting Charts
-
-### Export to PNG/SVG
-
-Export charts as images using Playwright (requires separate installation):
-
-```bash
-pip install playwright && playwright install chromium
-```
-
-```python
-# Save to file
-chart.save_png("chart.png")
-chart.save_svg("chart.svg")
-
-# Get bytes for display in notebook
-from owid.grapher.export import export_chart
-from IPython.display import SVG
-
-svg_bytes = export_chart(chart, format="svg")
-SVG(svg_bytes)
-```
-
-### Export to HTML
-
-Get the chart as a standalone HTML page that can be opened in a browser or embedded in an iframe:
-
-```python
-# Get HTML string
-html = chart.to_html()
-
-# Save to file
-with open("chart.html", "w") as f:
-    f.write(chart.to_html())
-```
-
-### Export Config
-
-View the underlying JSON configuration:
-
-```python
-chart = Chart(df).mark_line().encode(x='year', y='population', entity='country')
-chart.export()  # Returns the grapher config dict
-```
-
-## How It Works
-
-OWID's Grapher library uses a JSON config format for all charts. This package:
-
-1. Takes your pandas DataFrame and chart configuration
-2. Converts it to the Grapher's internal format (CSV + GrapherState config)
-3. Renders an iframe in Jupyter that loads the OWID Grapher library
-4. The Grapher library renders the interactive chart
 
 ## Development
 
 ```bash
-# Clone the repo
 git clone https://github.com/owid/owid-grapher-py
 cd owid-grapher-py
 
-# Install dependencies
-make .venv
-
-# Run tests
-make test
-
-# Check changed files
-make check
+make .venv     # install dependencies
+make test      # run all checks
+make check     # check changed files only
 ```
 
-### For Developers
+`owid/grapher/config.py` is generated from Grapher's published JSON schema. When
+Grapher publishes a new schema version, bump `SCHEMA_URL` in
+`scripts/generate_config_types.py` and run `make config.types`.
 
-**Useful resources when working with OWID charts:**
+To bump the version of Grapher itself, change `GRAPHER_VERSION` in
+`owid/grapher/__init__.py`; the bundles it points at are listed at
+`https://owid-packages.tail6e23.ts.net/ourworldindata/grapher/`.
 
-- **Chart configs**: Available for any existing chart by appending `.config.json` to the URL
-  - Example: `https://ourworldindata.org/grapher/annual-co2-emissions-per-country.config.json`
+### Useful resources
 
-- **Grapher schema**: The complete schema for chart configurations
-  - Latest: `https://files.ourworldindata.org/schemas/grapher-schema.009.json`
-
-- **ColumnDef schema**: TypeScript definition for column metadata
-  - Source: [`CoreTableTypes.ts`](https://github.com/owid/owid-grapher/blob/928b4fce3fcf3f16e2aef810737beaadae3ab0e1/packages/%40ourworldindata/types/src/domainTypes/CoreTableTypes.ts#L190)
-
-**Testing with real charts:**
-
-To replicate an existing OWID chart in a notebook:
-1. Fetch the chart config from the `.config.json` endpoint
-2. Download the data using `.csv?useColumnShortNames=true`
-3. Map the config properties to the `Chart` API methods
-
-## TODO
-
-This project should not attempt feature parity with grapher, but should walk the line between
-making an expressive charting tool and making something that can reproduce a large percentage of
-our existing charts. Some ideas for improvement:
-
-Enable `grapher.Chart()` to support more chart types:
-
-- [x] Scatterplots with color and size encoding
-- [x] Axis labels and units
-- [x] Log/linear scale controls
-- [x] Entity filtering (matching_entities_only)
-- [x] Map configuration (color schemes, binning strategies)
-- [x] Confidence intervals (shaded uncertainty bands)
-- [x] Variable metadata (names, colors, descriptions)
-- [x] Simple `plot()` function API
-- [ ] Axis bounds (min/max values)
-- [ ] Line charts without a time axis
-
-Auto-generate more types of notebooks correctly
-
-- [ ] Multi-variable single entity line-charts
-- [ ] Bar charts
-- [ ] Stacked bar charts
-- [ ] Time selection
+- **Chart configs**: append `.config.json` to any chart URL, e.g.
+  `https://ourworldindata.org/grapher/annual-co2-emissions-per-country.config.json`
+- **Chart data**: append `.csv?useColumnShortNames=true` to any chart URL
+- **Config schema**: `https://files.ourworldindata.org/schemas/grapher-schema.011.json`
+- **Grapher package docs**: [`packages/@ourworldindata/grapher/readme.md`](https://github.com/owid/owid-grapher/blob/master/packages/%40ourworldindata/grapher/readme.md)
 
 ## Changelog
 
+- unreleased
+    - Render charts with the `@ourworldindata/grapher` npm package (`GrapherLoader`) instead of the JS bundle scraped from ourworldindata.org
+    - **Breaking**: replace the chained `mark_*()`/`encode()`/`label()` API and `plot()` with a single `Chart(df, config=..., columns=...)` that passes Grapher's own chart config through untouched, typed by `GrapherConfig` (generated from Grapher's published JSON schema)
 - `0.3.5`
     - Support Python 3.13 and 3.14 (tested in CI)
 - `0.3.4`
