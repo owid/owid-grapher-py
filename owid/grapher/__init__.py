@@ -199,38 +199,39 @@ class Chart:
         return self.data.rename(columns=renamed)
 
     def _column_defs(self, shaped: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Grapher's OwidColumnDefs for the value columns.
+        """Grapher's OwidColumnDefs, one per annotated column.
 
-        Columns without metadata still need a def, or Grapher guesses their
-        type from the values.
+        Only the columns `columns=` mentions: Grapher works out the type and
+        formatting of the rest from their values, and does it well.
         """
-        value_columns = [
-            column for column in shaped.columns if column not in GRAPHER_COLUMNS
-        ]
+        value_columns = {
+            str(column) for column in shaped.columns if column not in GRAPHER_COLUMNS
+        }
         defined = {
             _sanitize_slug(slug): fields for slug, fields in self.columns.items()
         }
 
-        unknown = set(defined) - set(map(str, value_columns))
+        unknown = set(defined) - value_columns
         if unknown:
             raise ValueError(
-                f"columns= names columns that aren't in the DataFrame: "
-                f"{', '.join(sorted(unknown))}"
+                "columns= names columns that aren't in the DataFrame: "
+                + ", ".join(sorted(unknown))
             )
 
         return [
             {
-                "slug": str(column),
-                # Grapher guesses a column's type from its values otherwise,
-                # which it gets wrong for e.g. a column of years.
+                "slug": slug,
+                # A column def without a type turns off Grapher's own type
+                # detection for that column, which leaves it unformatted and
+                # unplottable -- so fill one in from the DataFrame.
                 "type": (
                     "Numeric"
-                    if pd.api.types.is_numeric_dtype(shaped[column])
+                    if pd.api.types.is_numeric_dtype(shaped[slug])
                     else "String"
                 ),
-                **defined.get(str(column), {}),
+                **fields,
             }
-            for column in value_columns
+            for slug, fields in defined.items()
         ]
 
     def export(self) -> Dict[str, Any]:

@@ -67,8 +67,11 @@ def test_dates_are_passed_as_a_date_column():
 
 
 def test_column_names_are_sanitized_into_slugs():
+    """Grapher slugs hold no spaces or brackets, in the CSV or in columns=."""
     df = sample_frame().rename(columns={"population": "population (millions)"})
-    export = Chart(df).export()
+    export = Chart(
+        df, columns={"population (millions)": {"name": "Population"}}
+    ).export()
     assert "population__millions_" in export["csv_data"].split("\n")[0]
     assert export["column_defs"][0]["slug"] == "population__millions_"
 
@@ -78,16 +81,19 @@ def test_column_names_are_sanitized_into_slugs():
 # =============================================================================
 
 
-def test_value_columns_get_a_column_def_each():
+def test_columns_without_metadata_get_no_def():
+    """Grapher infers the type and formatting of a plain column itself."""
     df = sample_frame().assign(gdp=[1, 2, 3, 4, 5, 6])
-    defs = Chart(df).export()["column_defs"]
-    assert [d["slug"] for d in defs] == ["population", "gdp"]
-    assert all(d["type"] == "Numeric" for d in defs)
+    assert Chart(df).export()["column_defs"] == []
 
 
-def test_non_numeric_columns_are_typed_as_strings():
+def test_annotated_columns_are_typed_from_the_frame():
+    """A def without a type turns off Grapher's own detection for that column."""
     df = sample_frame().assign(region=["Europe"] * 3 + ["Asia"] * 3)
-    defs = {d["slug"]: d["type"] for d in Chart(df).export()["column_defs"]}
+    chart = Chart(
+        df, columns={"population": {"name": "Population"}, "region": {"name": "Region"}}
+    )
+    defs = {d["slug"]: d["type"] for d in chart.export()["column_defs"]}
     assert defs == {"population": "Numeric", "region": "String"}
 
 
