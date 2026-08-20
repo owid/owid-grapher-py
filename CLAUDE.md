@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**owid-grapher-py** is a Python package for creating OWID (Our World in Data) charts in Jupyter notebooks. It provides a declarative API similar to Altair for building interactive charts that render using OWID's grapher JS library.
+**owid-grapher-py** is a Python package for creating OWID (Our World in Data) charts in Jupyter notebooks. It is a thin proxy over the `@ourworldindata/grapher` npm package: `Chart(df, config=..., columns=...)` shapes a DataFrame into the CSV Grapher reads and passes Grapher's own chart config through untouched.
 
 **Status**: ✅ Working (experimental) - renders with the `@ourworldindata/grapher` npm package, loaded as a standalone bundle from OWID's package host. That host is behind Tailscale until the package is published publicly, so charts only render for people on OWID's Tailnet.
 
@@ -72,87 +72,56 @@ The project uses a **namespace package** structure under `owid/`:
 
 ### Core Design Patterns
 
-#### Chart Building API
+#### The proxy rule
 
-Charts are built using a fluent/method-chaining API:
+`config` and `columns` are Grapher's own chart config and column metadata. They
+are never renamed or reinterpreted here — whatever the user writes reaches the JS
+library. When something is missing, the fix is a key in Grapher's config, not a
+new argument in this package.
 
-```python
-Chart(df).mark_line().encode(x='year', y='population', entity='country')
-```
+The only Python-side logic is what the browser can't do: shaping the DataFrame
+(entity column → `entityName`, time column → `year` or `date`, slug-safe column
+names) and defaulting `selectedEntityNames`, without which line and bar charts
+draw nothing.
 
-The `Chart` class:
-- Stores a pandas DataFrame internally
-- Builds up a `ChartConfig` object through method calls
-- Generates OWID's internal config format via `export()`
-- Renders in Jupyter via `_repr_html_()` which returns an iframe
+The few genuinely Python-side arguments are snake_case to mark them out:
+`entity=`, `time=` describe the DataFrame, `height=` the notebook output.
 
-#### Rendering Pipeline
+#### Typed config
 
-The `generate_iframe()` function:
-1. Converts the internal config to CSV format via `_config_to_csv()`
-2. Builds GrapherState options via `_build_grapher_config()`
-3. Creates an iframe that loads the Grapher package's `grapher.css` and
-   `grapher.standalone.min.js` (React included) from `GRAPHER_BUNDLE_URL`
-4. Hands config, CSV and column defs to `GrapherLoader.fromCsv(...).mount(container)`
+`owid/grapher/config.py` is **generated** from Grapher's published JSON schema by
+`scripts/generate_config_types.py` (`make config.types`). Don't edit it by hand;
+bump `SCHEMA_URL` in the generator when Grapher publishes a new schema version.
+It provides `GrapherConfig` (60 schema keys + 6 CSV-mode keys) and `ColumnDef`,
+plus `CONFIG_KEYS`, which `Chart` uses to reject typos at runtime — a type checker
+isn't watching inside a notebook.
 
-`GRAPHER_BUNDLE_URL` defaults to the pinned version on OWID's package host and can be
-overridden with the `OWID_GRAPHER_BUNDLE_URL` environment variable (e.g. to point at a
-locally served `dist/`). Bumping the Grapher version means changing `GRAPHER_VERSION`
-in `owid/grapher/__init__.py`. The package's own docs live in the owid-grapher repo at
-`packages/@ourworldindata/grapher/readme.md`.
+`ColumnDef` is the one hand-written type: column metadata has no published
+schema. Unknown keys there are passed through rather than rejected.
 
-#### Configuration System
+#### Rendering pipeline
 
-Uses **dataclasses with dataclasses-json** for config serialization:
-- `ChartConfig` - Top-level chart settings (title, type, interaction controls)
-- `Dimension` - Maps DataFrame columns to chart dimensions (x, y, color)
-- `DataConfig` - Converts pandas DataFrame to OWID's expected data format
+1. `Chart.export()` returns the three things Grapher's loader takes: the CSV, the
+   column defs and the config
+2. `_generate_chart_html()` loads `grapher.css` and `grapher.standalone.min.js`
+   (React included) from `GRAPHER_BUNDLE_URL` and calls
+   `GrapherLoader.fromCsv(...).mount(container)`
+3. `generate_iframe()` wraps that page in an iframe for Jupyter, `to_html()`
+   returns it as a standalone page, and `export.py` drives it with Playwright for
+   PNG/SVG
 
-Config uses `letter_case=LetterCase.CAMEL` to convert Python snake_case to JavaScript camelCase.
+`GRAPHER_BUNDLE_URL` defaults to the pinned version on OWID's package host and can
+be overridden with the `OWID_GRAPHER_BUNDLE_URL` environment variable (e.g. to
+point at a locally served `dist/`). Bumping the Grapher version means changing
+`GRAPHER_VERSION` in `owid/grapher/__init__.py`. The package's own docs live in
+the owid-grapher repo at `packages/@ourworldindata/grapher/readme.md`.
 
-#### Time Handling
+#### What the JS library already does
 
-Supports two time types (via `TimeType` enum):
-- `YEAR` - Standard yearly data (default)
-- `DAY` - Date-based data (detected when x='date'), uses "yearIsDay" display mode
-
-#### Chart Types
-
-Implemented via `mark_*()` methods:
-- `mark_line()` → "LineChart"
-- `mark_bar()` → "DiscreteBar"
-- `mark_bar(stacked=True)` → "StackedDiscreteBar"
-- `mark_scatter()` → "ScatterPlot"
-
-#### Interactivity
-
-The `interact()` method enables UI controls:
-- `allow_relative=True` - Shows relative/absolute toggle
-- `entity_control=True` - Shows country/entity picker
-- `scale_control=True` - Shows log/linear scale toggle
-
-#### Map Tab
-
-Use `mark_map()` to enable the map visualization:
-```python
-Chart(df).mark_line().mark_map(
-    color_scheme='Reds',
-    binning_strategy='manual',
-    custom_numeric_values=[0, 1e6, 1e7, 1e8]
-).encode(...)
-```
-
-#### Multiple Chart Types
-
-Chain `mark_*()` methods to enable multiple views (line, bar, map):
-```python
-Chart(df).mark_line().mark_bar().mark_map().encode(...)
-```
-
-Use `show()` to set the default tab:
-```python
-Chart(df).mark_line().mark_bar().show("discrete-bar").encode(...)
-```
+Verified against the real bundle, so don't reimplement any of it here: `ySlugs`
+is derived from the numeric columns when absent; the opening tab follows
+`chartTypes`; a `date` column of ISO strings gives a date timeline with no
+`yearIsDay` display config; maps and scatter plots need no entity selection.
 
 ### Integration with OWID Site
 
@@ -225,21 +194,21 @@ For any chart URL `https://ourworldindata.org/grapher/{slug}`:
    df = df.rename(columns={'Entity': 'entity', 'Year': 'year'})
    ```
 
-3. **Extract key settings from config**:
-   - `config['type']` or `config['chartTypes']` → which `mark_*()` methods to use
-   - `config['hasMapTab']` → whether to add `mark_map()`
-   - `config['map']['colorScale']` → map color scheme and binning
-   - `config['selectedEntityNames']` → pre-selected countries
-   - `config['title']`, `config['subtitle']`, `config['sourceDesc']` → labels
+3. **Keep the config**: it is already the format `Chart` takes, so the chart
+   type, map colour scale, selection and labels carry over as they are
 
-4. **Build the chart**
+4. **Build the chart**: `Chart(df, config=local_config(config, df))`, then
+   adjust the config keys you want to change
 
 ### Checklist for Replicating Charts
 
-When replicating OWID charts, always ensure:
-- [ ] Check `chartTypes` in config:
-  - If `chartTypes` is **not specified** → use both `.mark_line().mark_bar()` (default)
-  - If `chartTypes: ["LineChart"]` → use only `.mark_line()` (explicitly line-only)
-  - If `chartTypes` lists multiple types → include all specified
-- [ ] Include `.mark_map()` if `hasMapTab` is true in config
-- [ ] Set `.yaxis(unit="...")` with the appropriate unit (e.g., "t", "years", "%")
+`owid.grapher.notebook.local_config(config, df)` does the mechanical part: it
+keeps the config keys Grapher still understands against a local DataFrame, drops
+the site-only ones (`id`, `slug`, `dimensions`, ...), and fills in `ySlugs` from
+the frame. What's left to check by hand:
+
+- [ ] The DataFrame's value column names are what `ySlugs` (and `xSlug`,
+      `colorSlug`, `sizeSlug`) refer to
+- [ ] `selectedEntityNames` from the published config actually exist in the frame
+      — otherwise the chart renders with fewer series than the original
+- [ ] Units and display names, which live in `columns`, not in the chart config

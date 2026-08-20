@@ -209,7 +209,7 @@ def export_chart(
         from owid.grapher import Chart
         from owid.grapher.export import export_chart
 
-        chart = Chart(df).mark_line().encode(x='year', y='population')
+        chart = Chart(df, config={'title': 'Population'})
 
         # Save to file
         export_chart(chart, "my_chart.png")
@@ -252,7 +252,7 @@ def save_png(
         from owid.grapher import Chart
         from owid.grapher.export import save_png
 
-        chart = Chart(df).mark_line().encode(x='year', y='population')
+        chart = Chart(df, config={'title': 'Population'})
         save_png(chart, "my_chart.png")
         ```
     """
@@ -284,7 +284,7 @@ def save_svg(
         from owid.grapher import Chart
         from owid.grapher.export import save_svg
 
-        chart = Chart(df).mark_line().encode(x='year', y='population')
+        chart = Chart(df, config={'title': 'Population'})
         save_svg(chart, "my_chart.svg")
         ```
     """

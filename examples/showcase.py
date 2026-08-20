@@ -34,7 +34,8 @@ from pygments import highlight
 from pygments.formatters.html import HtmlFormatter
 from pygments.lexers.python import PythonLexer
 
-from owid.grapher import GRAPHER_BUNDLE_URL, GRAPHER_VERSION, Chart, plot
+from owid.grapher import GRAPHER_BUNDLE_URL, GRAPHER_VERSION, Chart
+from owid.grapher.notebook import local_config
 
 CACHE_DIR = Path(__file__).parent.parent / ".cachedir" / "showcase"
 DEFAULT_OUTPUT = Path("/tmp/owid-grapher-py-showcase.html")
@@ -84,6 +85,12 @@ def build_data() -> Dict[str, pd.DataFrame]:
     )
     life = life_all[life_all.entity.isin(countries) & (life_all.year >= 1950)]
     life_map = life_all[life_all.year == latest_year]
+    # The entities the published life-expectancy chart selects, for the demo
+    # that replays that chart's own config.
+    continents = ["World", "Africa", "Americas", "Asia", "Europe", "Oceania"]
+    life_continents = life_all[
+        life_all.entity.isin(continents) & (life_all.year >= 1950)
+    ]
 
     co2 = _owid_csv("annual-co2-emissions-per-country")
     co2 = co2[
@@ -141,6 +148,7 @@ def build_data() -> Dict[str, pd.DataFrame]:
     for name, frame in [
         ("life", life),
         ("life_map", life_map),
+        ("life_continents", life_continents),
         ("co2", co2),
         ("scatter", scatter),
         ("covid", covid),
@@ -153,6 +161,7 @@ def build_data() -> Dict[str, pd.DataFrame]:
     return {
         "life": life,
         "life_map": life_map,
+        "life_continents": life_continents,
         "co2": co2,
         "scatter": scatter,
         "covid": covid,
@@ -179,222 +188,241 @@ class Demo:
 DEMOS = [
     Demo(
         title="A line chart",
-        blurb="""The whole API in one line: point <code>encode()</code> at the columns
-        that hold time, values and entities. Everything else — the timeline, the entity
-        colours, the tooltips, the download button — comes from Grapher.""",
+        blurb="""Hand a DataFrame over and say what the chart is. The entity and time
+        columns are found by name; <code>config</code> is Grapher's own chart config,
+        passed to the library unchanged.""",
         code="""
-        chart = (
-            Chart(data["life"])
-            .mark_line()
-            .encode(x="year", y="life_expectancy", entity="entity")
-            .label(
-                title="Life expectancy at birth",
-                subtitle="The period life expectancy at birth, in a given year.",
-                source_desc="UN WPP (2024); HMD (2023); Zijdeman et al. (2015)",
-            )
-            .yaxis(unit="years")
-        )
-        """,
-    ),
-    Demo(
-        title="…or the same thing with plot()",
-        blurb="""<code>plot()</code> is the one-call version of the builder API. Same
-        chart, no chaining — handy when you're exploring in a notebook.""",
-        code="""
-        chart = plot(
+        chart = Chart(
             data["life"],
-            x="year",
-            y="life_expectancy",
-            entity="entity",
-            title="Life expectancy at birth",
-            unit="years",
-            source="UN WPP (2024); HMD (2023); Zijdeman et al. (2015)",
+            config={
+                "title": "Life expectancy at birth",
+                "subtitle": "The period life expectancy at birth, in a given year.",
+                "sourceDesc": "UN WPP (2024); HMD (2023); Zijdeman et al. (2015)",
+            },
+            columns={"life_expectancy": {"shortUnit": " years"}},
         )
         """,
     ),
     Demo(
         title="Bar charts",
-        blurb="""<code>mark_bar()</code> draws one bar per entity at the selected year.
-        Pass <code>stacked=True</code> for a stacked bar chart instead.""",
+        blurb="""<code>chartTypes</code> picks the chart; Grapher opens on the first
+        entry. <code>["StackedDiscreteBar"]</code> stacks them instead.""",
         code="""
-        chart = (
-            Chart(data["co2"])
-            .mark_bar()
-            .encode(x="year", y="emissions_total", entity="entity")
-            .label(
-                title="Annual CO₂ emissions",
-                subtitle="Emissions from fossil fuels and industry, 2023.",
-                source_desc="Global Carbon Budget (2024)",
-            )
-            .yaxis(unit="billion t")
+        chart = Chart(
+            data["co2"],
+            config={
+                "chartTypes": ["DiscreteBar"],
+                "title": "Annual CO₂ emissions",
+                "subtitle": "Emissions from fossil fuels and industry, 2023.",
+                "sourceDesc": "Global Carbon Budget (2024)",
+            },
+            columns={"emissions_total": {"shortUnit": " billion t"}},
         )
         """,
         height=520,
     ),
     Demo(
         title="Scatter plots, four dimensions at a time",
-        blurb="""A scatter takes <code>x</code>, <code>y</code>, plus <code>color</code>
-        and <code>size</code> from any other column. Here colour is the continent and
-        point size is population, on a log income axis.""",
+        blurb="""A scatter reads its x, colour and size from whichever columns the
+        <code>*Slug</code> keys name. <code>minTime</code> of <code>"latest"</code>
+        shows one year; drag the timeline for the rest.""",
         code="""
-        chart = (
-            Chart(data["scatter"])
-            .mark_scatter()
-            .encode(
-                x="gdp_per_capita",
-                y="life_expectancy",
-                entity="entity",
-                color="region",
-                size="population",
-            )
-            .label(
-                title="Life expectancy vs. GDP per capita",
-                subtitle="GDP per capita is adjusted for inflation and cost-of-living "
-                "differences between countries.",
-                source_desc="World Bank (2025); UN WPP (2024)",
-            )
-            .axis(x_unit="$", x_scale="log", y_unit="years")
+        chart = Chart(
+            data["scatter"],
+            config={
+                "chartTypes": ["ScatterPlot"],
+                "xSlug": "gdp_per_capita",
+                "ySlugs": "life_expectancy",
+                "colorSlug": "region",
+                "sizeSlug": "population",
+                "minTime": "latest",
+                "xAxis": {"scaleType": "log"},
+                "title": "Life expectancy vs. GDP per capita",
+                "subtitle": "GDP per capita is adjusted for inflation and "
+                "cost-of-living differences between countries.",
+                "sourceDesc": "World Bank (2025); UN WPP (2024)",
+            },
+            columns={
+                "gdp_per_capita": {"name": "GDP per capita", "shortUnit": "$"},
+                "life_expectancy": {"name": "Life expectancy", "shortUnit": " years"},
+            },
         )
         """,
     ),
     Demo(
         title="The world map",
-        blurb="""<code>mark_map()</code> adds Grapher's choropleth — with globe mode,
-        region zooming and a timeline — and takes the colour scheme and the bin edges.
-        <code>show("map")</code> makes it the tab the chart opens on.""",
+        blurb="""<code>hasMapTab</code> adds Grapher's choropleth — globe mode, region
+        zooming, timeline — and <code>map</code> holds everything about it, including
+        the colour scale. <code>tab</code> says which view the chart opens on.""",
         code="""
-        chart = (
-            Chart(data["life_map"])
-            .mark_line()
-            .mark_map(
-                color_scheme="YlGnBu",
-                binning_strategy="manual",
-                custom_numeric_values=[60, 65, 70, 75, 80, 85],
-            )
-            .show("map")
-            .encode(x="year", y="life_expectancy", entity="entity")
-            .label(
-                title="Life expectancy at birth",
-                subtitle="Shown for 2023.",
-                source_desc="UN WPP (2024)",
-            )
-            .yaxis(unit="years")
+        chart = Chart(
+            data["life_map"],
+            config={
+                "hasMapTab": True,
+                "tab": "map",
+                "map": {
+                    "colorScale": {
+                        "baseColorScheme": "YlGnBu",
+                        "binningStrategy": "manual",
+                        "customNumericValues": [60, 65, 70, 75, 80, 85],
+                    }
+                },
+                "title": "Life expectancy at birth",
+                "subtitle": "Shown for 2023.",
+                "sourceDesc": "UN WPP (2024)",
+            },
+            columns={"life_expectancy": {"shortUnit": " years"}},
         )
         """,
     ),
     Demo(
         title="Several views of one chart",
-        blurb="""Chain the <code>mark_*()</code> calls and the reader gets tabs to switch
-        between them — the same data as a line chart, a bar chart and a map.""",
+        blurb="""List several chart types and the reader gets tabs to switch between
+        them — the same data as a line chart, a bar chart and a map.""",
         code="""
-        chart = (
-            Chart(data["life"])
-            .mark_line()
-            .mark_bar()
-            .mark_map(color_scheme="YlGnBu")
-            .encode(x="year", y="life_expectancy", entity="entity")
-            .label(title="Life expectancy at birth", source_desc="UN WPP (2024)")
-            .yaxis(unit="years")
+        chart = Chart(
+            data["life"],
+            config={
+                "chartTypes": ["LineChart", "DiscreteBar"],
+                "hasMapTab": True,
+                "map": {"colorScale": {"baseColorScheme": "YlGnBu"}},
+                "title": "Life expectancy at birth",
+                "sourceDesc": "UN WPP (2024)",
+            },
+            columns={"life_expectancy": {"shortUnit": " years"}},
         )
         """,
     ),
     Demo(
         title="Dates, not just years",
-        blurb="""Encode <code>x</code> as a date column and the timeline switches to
-        days — no extra configuration.""",
+        blurb="""A column of dates is passed to Grapher as its <code>date</code>
+        column, and the timeline switches to days. Nothing to configure.""",
         code="""
-        chart = (
-            Chart(data["covid"])
-            .mark_line()
-            .encode(x="date", y="cases", entity="entity")
-            .label(
-                title="Weekly confirmed COVID-19 cases",
-                subtitle="The number of cases confirmed in the preceding week.",
-                source_desc="WHO (2024)",
-            )
-            .interact(entity_control=True)
+        chart = Chart(
+            data["covid"],
+            config={
+                "title": "Weekly confirmed COVID-19 cases",
+                "subtitle": "The number of cases confirmed in the preceding week.",
+                "sourceDesc": "WHO (2024)",
+            },
         )
         """,
     ),
     Demo(
-        title="Confidence intervals",
-        blurb="""<code>y_lower</code> and <code>y_upper</code> add the bounds as their
-        own series around the central line — here the published confidence interval
-        around the global temperature anomaly. <code>variables</code> is what makes
-        them read as a band: give them a name and a muted colour.""",
+        title="Confidence bands",
+        blurb="""Grapher has no band primitive: a band is three series, with the bounds
+        drawn in a muted colour. <code>ySlugs</code> is a space-separated list, in
+        Grapher's own spelling.""",
         code="""
-        chart = plot(
+        chart = Chart(
             data["temp"],
-            x="year",
-            y="anomaly",
-            y_lower="anomaly_lower",
-            y_upper="anomaly_upper",
-            entity="entity",
-            title="Global average temperature anomaly",
-            subtitle="Relative to the 1961-1990 average, with its 95% confidence "
-            "interval.",
-            source="Met Office Hadley Centre (2025)",
-            unit="°C",
-            variables={
-                "anomaly": {"name": "Temperature anomaly", "color": "#ca2628"},
+            config={
+                "ySlugs": "anomaly anomaly_lower anomaly_upper",
+                "addCountryMode": "change-country",
+                "title": "Global average temperature anomaly",
+                "subtitle": "Relative to the 1961-1990 average, with its 95% "
+                "confidence interval.",
+                "sourceDesc": "Met Office Hadley Centre (2025)",
+            },
+            columns={
+                "anomaly": {
+                    "name": "Temperature anomaly",
+                    "color": "#ca2628",
+                    "shortUnit": " °C",
+                },
                 "anomaly_lower": {"name": "Lower bound (95% CI)", "color": "#c8c8c8"},
                 "anomaly_upper": {"name": "Upper bound (95% CI)", "color": "#c8c8c8"},
             },
-            entity_mode="change-country",
         )
         """,
     ),
     Demo(
         title="Interactive controls",
-        blurb="""<code>interact()</code> turns on the controls Grapher already knows how
-        to draw: the entity picker, the log/linear switch and the relative-change
-        toggle.""",
+        blurb="""The controls are config, like everything else: the entity picker, the
+        log/linear switch, the relative-change toggle.""",
         code="""
-        chart = (
-            Chart(data["life"])
-            .mark_line()
-            .encode(x="year", y="life_expectancy", entity="entity")
-            .label(title="Life expectancy at birth", source_desc="UN WPP (2024)")
-            .yaxis(unit="years")
-            .interact(entity_control=True, scale_control=True, allow_relative=True)
+        chart = Chart(
+            data["life"],
+            config={
+                "addCountryMode": "add-country",
+                "hideRelativeToggle": False,
+                "yAxis": {"canChangeScaleType": True},
+                "title": "Life expectancy at birth",
+                "sourceDesc": "UN WPP (2024)",
+            },
+            columns={"life_expectancy": {"shortUnit": " years"}},
         )
         """,
     ),
     Demo(
         title="Indicator metadata",
-        blurb="""<code>variable()</code> attaches the metadata Grapher shows around the
-        data: the display name and unit, the description behind
-        <em>Learn more about this data</em>, and the source line under the chart.""",
+        blurb="""<code>columns</code> is Grapher's column metadata: the display name and
+        unit, the description behind <em>Learn more about this data</em>, the source
+        line under the chart, and the citation block, via <code>origins</code>.""",
         code="""
-        chart = (
-            Chart(data["co2"])
-            .mark_bar()
-            .encode(x="year", y="emissions_total", entity="entity")
-            .variable(
-                "emissions_total",
-                name="Annual CO₂ emissions",
-                unit="billion tonnes",
-                short_unit="Gt",
-                description_short="Emissions from fossil fuels and industry, "
-                "excluding land use change.",
-                source_name="Global Carbon Budget (2024)",
-                source_link="https://globalcarbonbudget.org",
-            )
-            .label(
-                title="Annual CO₂ emissions",
-                source_desc="Global Carbon Budget (2024)",
-                note="Land-use change emissions are excluded.",
-            )
+        chart = Chart(
+            data["co2"],
+            config={
+                "chartTypes": ["DiscreteBar"],
+                "title": "Annual CO₂ emissions",
+                "sourceDesc": "Global Carbon Budget (2024)",
+                "note": "Land-use change emissions are excluded.",
+            },
+            columns={
+                "emissions_total": {
+                    "name": "Annual CO₂ emissions",
+                    "unit": "billion tonnes",
+                    "shortUnit": "Gt",
+                    "descriptionShort": "Emissions from fossil fuels and industry, "
+                    "excluding land use change.",
+                    "descriptionKey": "Figures are territorial emissions: they cover "
+                    "emissions produced within a country's borders.",
+                    "sourceName": "Global Carbon Budget (2024)",
+                    "sourceLink": "https://globalcarbonbudget.org",
+                    "timespan": "1750–2023",
+                    "origins": [
+                        {
+                            "producer": "Global Carbon Project",
+                            "title": "Global Carbon Budget",
+                            "urlMain": "https://globalcarbonbudget.org",
+                            "dateAccessed": "2025-01-15",
+                            "citationFull": "Global Carbon Budget (2024).",
+                        }
+                    ],
+                },
+            },
         )
         """,
         height=520,
+    ),
+    Demo(
+        title="A published OWID chart, config and all",
+        blurb="""Because <code>config</code> is Grapher's own format, a chart on
+        ourworldindata.org can be replayed over your own data by fetching its config
+        and dropping the keys that only mean something on the site — which is what
+        <code>owid.grapher.notebook.local_config</code> does.""",
+        code="""
+        published = requests.get(
+            "https://ourworldindata.org/grapher/life-expectancy.config.json"
+        ).json()
+
+        chart = Chart(
+            data["life_continents"],
+            config=local_config(published, data["life_continents"]),
+        )
+        """,
     ),
 ]
 
 
 def render_chart(demo: Demo, data: Dict[str, pd.DataFrame]) -> Chart:
     """Execute a demo's code and return the chart it built."""
-    namespace: Dict[str, Any] = {"Chart": Chart, "plot": plot, "data": data}
+    namespace: Dict[str, Any] = {
+        "Chart": Chart,
+        "local_config": local_config,
+        "requests": requests,
+        "data": data,
+    }
     exec(textwrap.dedent(demo.code), namespace)
     chart = namespace.get("chart")
     if not isinstance(chart, Chart):
