@@ -9,7 +9,7 @@ import json
 import pandas as pd
 import pytest
 
-from owid.grapher import GRAPHER_BUNDLE_URL, Chart, GrapherConfig
+from owid.grapher import GRAPHER_BUNDLE_URL, Chart, GrapherConfig, day_number
 
 
 def sample_frame() -> pd.DataFrame:
@@ -64,6 +64,13 @@ def test_dates_are_passed_as_a_date_column():
     )
     assert Chart(df).export()["csv_data"].split("\n")[0].startswith("date,")
     assert Chart(sample_frame()).export()["csv_data"].split("\n")[0].startswith("year,")
+
+
+def test_day_number_converts_dates_to_graphers_time_values():
+    """Grapher counts days from 2020-01-21, so a date can't be written as itself."""
+    assert day_number("2020-01-21") == 0
+    assert day_number("2021-06-01") == 497
+    assert day_number(pd.Timestamp("2021-06-01")) == 497
 
 
 def test_column_names_are_sanitized_into_slugs():

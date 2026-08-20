@@ -99,6 +99,14 @@ isn't watching inside a notebook.
 `ColumnDef` is the one hand-written type: column metadata has no published
 schema. Unknown keys there are passed through rather than rejected.
 
+#### Time values in a date chart's config
+
+A `date` column gets a date timeline for free, but every time value in the
+config of such a chart (`minTime`, `maxTime`, `map.time`, the timeline bounds)
+is a **day offset from 2020-01-21**, Grapher's `EPOCH_DATE`. Written as a date
+string it is parsed as a year and silently clamps the chart to its last day.
+`day_number()` converts; don't add a second spelling for those keys.
+
 #### Rendering pipeline
 
 1. `Chart.export()` returns the three things Grapher's loader takes: the CSV, the

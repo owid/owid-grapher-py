@@ -146,6 +146,10 @@ Chart(df, config={
 # Daily data: a column of dates needs no configuration
 Chart(df_with_a_date_column, config={"title": "Weekly cases"})
 
+# ...but time values in its config are day offsets from 2020-01-21
+from owid.grapher import day_number
+Chart(df_with_a_date_column, config={"minTime": day_number("2021-06-15")})
+
 # A confidence band is three series, with muted bounds
 Chart(df, config={"ySlugs": "anomaly anomaly_lower anomaly_upper"},
       columns={"anomaly_lower": {"color": "#c8c8c8"},

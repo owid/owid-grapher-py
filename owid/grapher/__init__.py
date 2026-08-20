@@ -31,13 +31,14 @@ Example:
     ```
 """
 
+import datetime as dt
 import difflib
 import json
 import os
 import random
 import re
 import string
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 import pandas as pd
 
@@ -76,6 +77,34 @@ _UNSAFE_SLUG_CHARS = re.compile(r"[^a-zA-Z0-9_\-]")
 
 # How tall the chart is in a notebook, in pixels.
 DEFAULT_HEIGHT = 600
+
+# Grapher counts days from this date (its EPOCH_DATE). Every time value in the
+# config of a chart with a `date` column -- minTime, maxTime, map.time, the
+# timeline bounds -- is a day offset from it. Use day_number() rather than
+# working them out by hand.
+GRAPHER_EPOCH = dt.date(2020, 1, 21)
+
+
+def day_number(date: Union[str, dt.date, dt.datetime, pd.Timestamp]) -> int:
+    """The number Grapher uses for a date in the config of a daily chart.
+
+    Grapher's time values are day offsets from `GRAPHER_EPOCH`, so a date
+    written as itself would be read as a year. Anywhere a config key takes a
+    time on a chart whose time column is dates, it takes one of these.
+
+    Args:
+        date: an ISO date string, a `date`, or anything pandas reads as one.
+
+    Example:
+        ```python
+        Chart(df, config={
+            "minTime": day_number("2021-06-15"),
+            "maxTime": day_number("2021-07-15"),
+        })
+        ```
+    """
+    parsed = pd.Timestamp(date).date()
+    return (parsed - GRAPHER_EPOCH).days
 
 
 def _sanitize_slug(name: str) -> str:

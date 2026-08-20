@@ -146,6 +146,21 @@ Chart(df, config={
 })
 ```
 
+### Dates
+
+A column of dates needs no configuration — Grapher gives it a date timeline.
+But its *time values* are day offsets from 2020-01-21 (Grapher's epoch), so a
+date written as itself in the config would be read as a year:
+
+```python
+from owid.grapher import Chart, day_number
+
+Chart(df, config={
+    "minTime": day_number("2021-06-15"),
+    "maxTime": day_number("2021-07-15"),
+})
+```
+
 ### Which columns to plot
 
 Grapher plots every numeric column unless you say otherwise. `ySlugs` is a
