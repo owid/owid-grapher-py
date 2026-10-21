@@ -12,6 +12,9 @@ resolution-markers = [
 exclude-newer = "2026-07-26T07:27:03.372141Z"
 exclude-newer-span = "P3D"
 
+[options.exclude-newer-package]
+certifi = false
+
 [[package]]
 name = "anyio"
 version = "4.12.0"
