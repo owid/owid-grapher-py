@@ -48,6 +48,9 @@ Documentation = "https://github.com/owid/owid-grapher-py#readme"
 
 [tool.uv]
 exclude-newer = "3 days"
+# certifi is the CA trust store; its releases distrust compromised CAs, so a cooldown would
+# only keep forged certificates trusted for longer.
+exclude-newer-package = { certifi = false }
 dev-dependencies = [
     "watchdog>=2.1.3",
     "PyYAML>=5.4.1",
