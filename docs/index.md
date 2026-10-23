@@ -22,11 +22,14 @@ df = pd.DataFrame({
     'population': [331, 332, 333]
 })
 
-Chart(df).mark_line().encode(x='year', y='population')
+Chart(df, config={'title': 'US population'})
 ```
 
+`config` is Grapher's own chart config, passed to the JavaScript library
+unchanged — see `GrapherConfig` for every key it takes.
+
 !!! tip "Learn from more examples!"
-    - Check out our [Jupyter notebook](https://github.com/owid/owid-grapher-py/blob/master/examples/quickstart.ipynb)!
+    - Every chart type, next to the code that makes it: [examples/showcase.py](https://github.com/owid/owid-grapher-py/blob/master/examples/showcase.py)
     - Check our examples on [GitHub](https://github.com/owid/owid-grapher-py)
 
 ## Community & Support

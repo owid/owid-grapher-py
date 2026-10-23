@@ -1,1042 +1,308 @@
 # -*- coding: utf-8 -*-
 #
-#  grapher.py
-#  notebooks
+#  __init__.py
+#  owid-grapher-py
 #
 
+"""Our World in Data charts from a pandas DataFrame.
+
+Charts are drawn by the `@ourworldindata/grapher` npm package, which this
+module loads in the browser. It is a thin proxy over that package rather than
+an API of its own: `config` and `columns` are Grapher's own chart config and
+column metadata, passed to the library unchanged. Their keys are documented by
+the `GrapherConfig` and `ColumnDef` types in `owid.grapher.config`, by
+Grapher's [JSON schema](https://files.ourworldindata.org/schemas/), and by the
+config of every chart on ourworldindata.org (append `.config.json` to a chart
+URL to read one).
+
+Example:
+    ```python
+    from owid.grapher import Chart
+
+    Chart(
+        df,
+        config={
+            "title": "Life expectancy at birth",
+            "chartTypes": ["LineChart"],
+            "hasMapTab": True,
+        },
+        columns={"life_expectancy": {"shortUnit": " years"}},
+    )
+    ```
+"""
+
 import datetime as dt
+import difflib
 import json
+import os
 import random
 import re
 import string
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 import pandas as pd
-from dateutil.parser import parse
 
-from owid.grapher.grapher_state import (  # noqa: F401 - re-exported for public API
-    AxisConfig,
-    BinningStrategy,
-    ColorScaleConfig,
-    ColorSchemeName,
-    EntitySelectionMode,
-    GrapherState,
-    MapConfig,
-    MapRegionName,
+from owid.grapher.config import (  # noqa: F401 - re-exported for public API
+    CONFIG_KEYS,
+    ColumnDef,
+    GrapherConfig,
 )
-from owid.grapher.utils import pruned_camel_json
 
-DATE_DISPLAY = {"yearIsDay": True, "zeroDay": "1970-01-01"}
+# Grapher ships as an npm package; we load its standalone bundle (which has
+# React baked in) straight from OWID's package host. That host is only
+# reachable from OWID's Tailnet until the package is published publicly, so the
+# base URL can be pointed elsewhere -- a local `dist/` server, a future public
+# CDN -- without touching the code.
+GRAPHER_VERSION = "v0.1.0"
+GRAPHER_BUNDLE_URL = os.environ.get(
+    "OWID_GRAPHER_BUNDLE_URL",
+    f"https://owid-packages.tail6e23.ts.net/ourworldindata/grapher/{GRAPHER_VERSION}",
+).rstrip("/")
+
+# The column names Grapher's table parser understands, in the order we look for
+# them: `year` for plain years, `date` for ISO dates. (Grapher also reads `day`,
+# but as an integer count from an epoch of its own, which is not what a
+# DataFrame holds.)
+TIME_COLUMNS = ("year", "date", "day")
+
+# Column names we accept as the entity column. Grapher itself only reads
+# `entityName`, so whichever one is found is renamed to that.
+ENTITY_COLUMNS = ("entityName", "entity", "country", "location")
+
+# The shape Grapher's table parser expects, once we're done renaming.
+GRAPHER_COLUMNS = ("entityName", "year", "date")
 
 # Characters that are safe in OWID slugs (alphanumeric, underscore, hyphen)
 _UNSAFE_SLUG_CHARS = re.compile(r"[^a-zA-Z0-9_\-]")
 
+# How tall the chart is in a notebook, in pixels.
+DEFAULT_HEIGHT = 600
+
+# Grapher counts days from this date (its EPOCH_DATE). Every time value in the
+# config of a chart with a `date` column -- minTime, maxTime, map.time, the
+# timeline bounds -- is a day offset from it. Use day_number() rather than
+# working them out by hand.
+GRAPHER_EPOCH = dt.date(2020, 1, 21)
+
+
+def day_number(date: Union[str, dt.date, dt.datetime, pd.Timestamp]) -> int:
+    """The number Grapher uses for a date in the config of a daily chart.
+
+    Grapher's time values are day offsets from `GRAPHER_EPOCH`, so a date
+    written as itself would be read as a year. Anywhere a config key takes a
+    time on a chart whose time column is dates, it takes one of these.
+
+    Args:
+        date: an ISO date string, a `date`, or anything pandas reads as one.
+
+    Example:
+        ```python
+        Chart(df, config={
+            "minTime": day_number("2021-06-15"),
+            "maxTime": day_number("2021-07-15"),
+        })
+        ```
+    """
+    parsed = pd.Timestamp(date).date()
+    return (parsed - GRAPHER_EPOCH).days
+
 
 def _sanitize_slug(name: str) -> str:
-    """Sanitize a column name for use as a slug.
+    """Sanitize a column name for use as a Grapher slug.
 
-    OWID uses space-separated slug strings, so spaces and other special characters
-    must be replaced. Only alphanumeric characters, underscores, and hyphens are kept.
+    OWID uses space-separated slug strings, so spaces and other special
+    characters must be replaced. Only alphanumeric characters, underscores and
+    hyphens are kept.
     """
     return _UNSAFE_SLUG_CHARS.sub("_", name)
 
 
-# Mapping from GrapherChartType to tab name
-_CHART_TYPE_TO_TAB: Dict[str, str] = {
-    "LineChart": "line",
-    "DiscreteBar": "discrete-bar",
-    "StackedDiscreteBar": "stacked-discrete-bar",
-    "ScatterPlot": "scatter",
-    "StackedArea": "stacked-area",
-    "SlopeChart": "slope",
-    "StackedBar": "stacked-bar",
-    "Marimekko": "marimekko",
-}
-
-
 class Chart:
-    """Create interactive OWID charts from pandas DataFrames.
+    """A Grapher chart of a DataFrame.
 
-    The Chart class provides a declarative API for building interactive visualizations
-    using OWID's Grapher library. Charts are configured through method chaining and
-    render directly in Jupyter notebooks.
-
-    Multiple chart types can be enabled by chaining mark_*() methods. The first one
-    called becomes the default view, or use show() to set a specific default tab.
+    Displays itself in a notebook; `to_html()`, `save_png()` and `save_svg()`
+    render it elsewhere.
 
     Args:
-        data: A pandas DataFrame containing the data to visualize. The DataFrame should
-            have columns for time/x-axis, values/y-axis, and optionally entities for grouping.
+        df: the data. One column identifies the entity (country, region, or
+            whatever `entityType` says), one holds the time, and the rest are
+            values Grapher can plot.
+        config: Grapher's chart config -- `title`, `chartTypes`, `hasMapTab`,
+            `selectedEntityNames`, `map`, and 60 more keys, spelled as Grapher
+            spells them. See `GrapherConfig`. Unknown keys are an error.
+        columns: metadata per value column -- display name, unit, colour,
+            source, description. See `ColumnDef`. Keyed by column name.
+        entity: which column holds entity names. Defaults to the first of
+            entityName/entity/country/location present in the frame.
+        time: which column holds time. Defaults to the first of year/date/day
+            present. A column of dates is passed to Grapher as `date`.
+        height: how tall the chart is in a notebook, in pixels.
 
     Example:
         ```python
-        import pandas as pd
-        from owid.grapher import Chart
-
-        df = pd.DataFrame({
-            'year': [2020, 2021, 2022],
-            'country': ['USA', 'China', 'India'],
-            'gdp': [21.4, 14.7, 2.9]
-        })
-
-        # Single chart type
-        Chart(df).mark_line().encode(
-            x='year',
-            y='gdp',
-            entity='country'
-        ).label(
-            title='GDP by Country'
+        Chart(
+            df,
+            config={
+                "title": "Annual CO₂ emissions",
+                "chartTypes": ["DiscreteBar"],
+                "sourceDesc": "Global Carbon Budget (2024)",
+            },
+            columns={"emissions": {"name": "CO₂ emissions", "shortUnit": "t"}},
         )
-
-        # Multiple chart types with bar as default
-        Chart(df).mark_line().mark_bar().show("discrete-bar").encode(...)
         ```
     """
 
-    def __init__(self, data: pd.DataFrame):
-        self.data = data.copy()
-        # GrapherState stores all chart configuration
-        self._state = GrapherState(
-            hideLogo=True,
-            hideRelativeToggle=True,
-            chartTypes=[],  # Will be populated by mark_*() methods
-            xAxis=AxisConfig(),
-            yAxis=AxisConfig(),
-        )
-        self.x: Optional[str] = None
-        self.y: Optional[str] = None
-        self.y_extra: List[str] = []  # additional y indicators (multi-indicator charts)
-        self.y_lower: Optional[str] = None  # Lower bound for confidence intervals
-        self.y_upper: Optional[str] = None  # Upper bound for confidence intervals
-        self.entity: Optional[str] = None
-        self.color: Optional[str] = None
-        self.size: Optional[str] = None
-        self.time_type = TimeType.YEAR
-        self.selection: Optional[List[str]] = None
-        self.timespan: Optional[Tuple[Any, Any]] = None
-        self.x_unit: Optional[str] = None
-        self.y_unit: Optional[str] = None
-        self.variable_configs: Dict[str, "VariableConfig"] = {}  # Column metadata
-
-    def encode(
+    def __init__(
         self,
-        x: Optional[str] = None,
-        y: Optional[Union[str, List[str], Tuple[str, ...]]] = None,
-        y_lower: Optional[str] = None,
-        y_upper: Optional[str] = None,
+        df: pd.DataFrame,
+        *,
+        config: Optional[GrapherConfig] = None,
+        columns: Optional[Mapping[str, ColumnDef]] = None,
         entity: Optional[str] = None,
-        color: Optional[str] = None,
-        size: Optional[str] = None,
-    ) -> "Chart":
-        """Map DataFrame columns to visual properties.
-
-        This method establishes the visual encoding by mapping DataFrame columns to
-        chart dimensions. The behavior varies by chart type:
-
-        - **Line/Bar charts**: `x` is time, `y` is values, `entity` groups lines/bars
-        - **Scatter plots**: `x` and `y` are both numeric values, `entity` groups points
-
-        Args:
-            x: Column name for x-axis. For line/bar charts, typically a time column
-                ('year', 'date'). For scatter plots, a numeric value column.
-            y: Column name(s) for y-axis values to plot. Pass a list of columns to draw
-                several indicators as separate series on one chart (multi-indicator); they
-                share one y-axis, so use comparable/same-unit indicators. For bar charts,
-                can be the entity column if you want entities on the y-axis.
-            y_lower: Column name for lower bound of confidence interval. When specified
-                along with y_upper, renders a shaded confidence band around the main line.
-            y_upper: Column name for upper bound of confidence interval. When specified
-                along with y_lower, renders a shaded confidence band around the main line.
-            entity: Column name for grouping data (e.g., 'country', 'region'). Each unique
-                value becomes a separate line/series. Optional for single-series charts.
-            color: Column name for color encoding in scatter plots. Values map to colors.
-            size: Column name for size encoding in scatter plots. Values map to point sizes.
-
-        Returns:
-            Self for method chaining.
-
-        Raises:
-            ValueError: If a specified column name is not found in the DataFrame.
-
-        Example:
-            ```python
-            # Line chart with multiple countries
-            Chart(df).mark_line().encode(
-                x='year',
-                y='population',
-                entity='country'
-            )
-
-            # Line chart with confidence intervals
-            Chart(df).mark_line().encode(
-                x='year',
-                y='temperature',
-                y_lower='temperature_low',
-                y_upper='temperature_high',
-                entity='region'
-            )
-
-            # Scatter plot with color and size
-            Chart(df).mark_scatter().encode(
-                x='gdp_per_capita',
-                y='life_expectancy',
-                entity='country',
-                color='continent',
-                size='population'
-            )
-            ```
-        """
-        self.x = x
-        # y may be a single column or a list of columns (multi-indicator → one series each)
-        if isinstance(y, (list, tuple)):
-            self.y = y[0] if len(y) else None
-            self.y_extra = list(y[1:])
-        else:
-            self.y = y
-            self.y_extra = []
-        self.y_lower = y_lower
-        self.y_upper = y_upper
+        time: Optional[str] = None,
+        height: int = DEFAULT_HEIGHT,
+    ) -> None:
+        self.data = df
+        # Copied, so that mutating chart.config can't reach back into the
+        # caller's dict (and vice versa).
+        self.config: Dict[str, Any] = {**config} if config else {}
+        self.columns: Dict[str, Any] = {**columns} if columns else {}
         self.entity = entity
-        self.color = color
-        self.size = size
+        self.time = time
+        self.height = height
 
-        # fail early if there's been a typo
-        for col in [x, self.y, *self.y_extra, y_lower, y_upper, entity, color, size]:
-            if col and col not in self.data.columns:
-                raise ValueError(f"no such column: {col}")
+        _reject_unknown_keys(self.config)
 
-        if x == "date":
-            self.time_type = TimeType.DAY
+    def __repr__(self) -> str:
+        title = self.config.get("title", "untitled")
+        return f"<Chart {title!r} of {len(self.data)} rows>"
 
-        self._state.hideLegend = not entity
+    # -- turning the DataFrame into what Grapher reads ----------------------
 
-        return self
+    def _resolve(
+        self, given: Optional[str], candidates: tuple[str, ...], what: str
+    ) -> str:
+        """The column to use for `what`, either given or found by name."""
+        if given is not None:
+            if given not in self.data.columns:
+                raise ValueError(
+                    f"{what} column {given!r} is not in the DataFrame "
+                    f"(columns: {', '.join(map(str, self.data.columns))})"
+                )
+            return given
 
-    def label(
-        self, title: str = "", subtitle: str = "", source_desc: str = "", note: str = ""
-    ) -> "Chart":
-        """Add labels and text to the chart.
+        for candidate in candidates:
+            if candidate in self.data.columns:
+                return candidate
 
-        Args:
-            title: Chart title.
-            subtitle: Chart subtitle.
-            source_desc: Data source attribution.
-            note: Additional notes or footnotes.
-
-        Returns:
-            Self for method chaining.
-        """
-        self._state.title = title if title else None
-        self._state.subtitle = subtitle if subtitle else None
-        self._state.sourceDesc = source_desc if source_desc else None
-        self._state.note = note if note else None
-        return self
-
-    def xaxis(
-        self,
-        label: Optional[str] = None,
-        unit: Optional[str] = None,
-        scale: Optional[Literal["linear", "log"]] = None,
-        scale_control: Optional[bool] = None,
-    ) -> "Chart":
-        """Configure the x-axis.
-
-        Args:
-            label: Axis label text.
-            unit: Unit of measurement (e.g., '$', 'kg').
-            scale: Scale type ('linear' or 'log').
-            scale_control: Allow users to toggle scale.
-
-        Returns:
-            Self for method chaining.
-        """
-        assert self._state.xAxis is not None  # Initialized in __init__
-        if label is not None:
-            self._state.xAxis.label = label
-        if unit is not None:
-            self.x_unit = unit
-        if scale is not None:
-            self._state.xAxis.scaleType = scale
-        if scale_control is not None:
-            self._state.xAxis.canChangeScaleType = scale_control
-        return self
-
-    def yaxis(
-        self,
-        label: Optional[str] = None,
-        unit: Optional[str] = None,
-        scale: Optional[Literal["linear", "log"]] = None,
-        scale_control: Optional[bool] = None,
-    ) -> "Chart":
-        """Configure the y-axis.
-
-        Args:
-            label: Axis label text.
-            unit: Unit of measurement (e.g., '$', 'kg').
-            scale: Scale type ('linear' or 'log').
-            scale_control: Allow users to toggle scale.
-
-        Returns:
-            Self for method chaining.
-        """
-        assert self._state.yAxis is not None  # Initialized in __init__
-        if label is not None:
-            self._state.yAxis.label = label
-        if unit is not None:
-            self.y_unit = unit
-        if scale is not None:
-            self._state.yAxis.scaleType = scale
-        if scale_control is not None:
-            self._state.yAxis.canChangeScaleType = scale_control
-        return self
-
-    def axis(
-        self,
-        x_label: Optional[str] = None,
-        y_label: Optional[str] = None,
-        x_unit: Optional[str] = None,
-        y_unit: Optional[str] = None,
-        x_scale: Optional[Literal["linear", "log"]] = None,
-        y_scale: Optional[Literal["linear", "log"]] = None,
-        x_scale_control: Optional[bool] = None,
-        y_scale_control: Optional[bool] = None,
-    ) -> "Chart":
-        """Configure both axes at once.
-
-        Convenience method for setting properties on both axes. For single-axis
-        configuration, use xaxis() or yaxis() instead.
-
-        Args:
-            x_label: Label text for x-axis.
-            y_label: Label text for y-axis.
-            x_unit: Unit suffix for x-axis values (e.g., '$', '%', 'kg').
-            y_unit: Unit suffix for y-axis values.
-            x_scale: Scale type for x-axis ('linear' or 'log').
-            y_scale: Scale type for y-axis ('linear' or 'log').
-            x_scale_control: If True, adds UI control to toggle x-axis scale.
-            y_scale_control: If True, adds UI control to toggle y-axis scale.
-
-        Returns:
-            Self for method chaining.
-        """
-        assert self._state.xAxis is not None  # Initialized in __init__
-        assert self._state.yAxis is not None  # Initialized in __init__
-        if x_label is not None:
-            self._state.xAxis.label = x_label
-        if y_label is not None:
-            self._state.yAxis.label = y_label
-        if x_unit is not None:
-            self.x_unit = x_unit
-        if y_unit is not None:
-            self.y_unit = y_unit
-        if x_scale is not None:
-            self._state.xAxis.scaleType = x_scale
-        if y_scale is not None:
-            self._state.yAxis.scaleType = y_scale
-        if x_scale_control is not None:
-            self._state.xAxis.canChangeScaleType = x_scale_control
-        if y_scale_control is not None:
-            self._state.yAxis.canChangeScaleType = y_scale_control
-        return self
-
-    def _add_chart_type(self, chart_type: str) -> None:
-        """Add a chart type if not already present."""
-        if chart_type not in self._state.chartTypes:
-            self._state.chartTypes.append(chart_type)
-        # First chart type added becomes the default tab
-        if self._state.tab == "chart":  # Default value means not yet set
-            self._state.tab = _CHART_TYPE_TO_TAB.get(chart_type, "chart")  # type: ignore
-
-    def mark_scatter(self) -> "Chart":
-        """Add scatter plot to available chart types.
-
-        Scatter plots display individual data points with x and y positions. Use `color`
-        and `size` encodings for additional dimensions. Best for showing relationships
-        between two numeric variables.
-
-        Can be combined with other mark_*() methods to enable multiple chart types.
-
-        Returns:
-            Self for method chaining.
-        """
-        self._add_chart_type("ScatterPlot")
-        return self
-
-    def mark_line(self) -> "Chart":
-        """Add line chart to available chart types.
-
-        Line charts connect data points with lines, ideal for showing trends over time.
-        Multiple entities create multiple lines.
-
-        Can be combined with other mark_*() methods to enable multiple chart types.
-
-        Returns:
-            Self for method chaining.
-        """
-        self._add_chart_type("LineChart")
-        return self
-
-    def mark_bar(self, stacked: bool = False) -> "Chart":
-        """Add bar chart to available chart types.
-
-        Bar charts display categorical data with rectangular bars. Bars can be shown
-        side-by-side (default) or stacked on top of each other.
-
-        Can be combined with other mark_*() methods to enable multiple chart types.
-
-        Args:
-            stacked: If True, creates a stacked bar chart where bars for different
-                entities are stacked vertically. If False (default), bars are shown
-                side-by-side.
-
-        Returns:
-            Self for method chaining.
-        """
-        chart_type = "StackedDiscreteBar" if stacked else "DiscreteBar"
-        self._add_chart_type(chart_type)
-        return self
-
-    def mark_slope(self) -> "Chart":
-        """Add slope chart to available chart types.
-
-        Slope charts compare values between two time points, showing the change
-        as connecting lines between start and end values. Ideal for highlighting
-        increases and decreases across entities.
-
-        Can be combined with other mark_*() methods to enable multiple chart types.
-
-        Returns:
-            Self for method chaining.
-        """
-        self._add_chart_type("SlopeChart")
-        return self
-
-    def mark_marimekko(self) -> "Chart":
-        """Add Marimekko chart to available chart types.
-
-        Marimekko charts (also called mosaic charts) show part-to-whole relationships
-        where both width and height of segments are meaningful. Width represents one
-        dimension (e.g., population) and height represents another (e.g., percentage).
-
-        Can be combined with other mark_*() methods to enable multiple chart types.
-
-        Returns:
-            Self for method chaining.
-        """
-        self._add_chart_type("Marimekko")
-        return self
-
-    def mark_map(
-        self,
-        time_tolerance: Optional[int] = None,
-        color_scheme: Optional[ColorSchemeName] = None,
-        binning_strategy: Optional[BinningStrategy] = None,
-        custom_numeric_values: Optional[List[float]] = None,
-        region: Optional["MapRegionName"] = None,
-    ) -> "Chart":
-        """Enable the map tab with optional configuration.
-
-        Adds a world map visualization showing data geographically. Can be combined
-        with other mark_*() methods.
-
-        Args:
-            time_tolerance: How many years to look back/forward for data
-            color_scheme: Color scheme name (e.g., "Reds", "Blues", "YlOrRd")
-            binning_strategy: How to bin values ("auto", "manual", "equalInterval", "quantiles")
-            custom_numeric_values: Custom bin boundaries when using manual binning
-            region: Map region to focus on. Options: "World" (default), "Africa",
-                "NorthAmerica", "SouthAmerica", "Asia", "Europe", "Oceania".
-                This changes the map projection and viewport to zoom into a continent.
-
-        Returns:
-            Self for method chaining.
-
-        Example:
-            ```python
-            # Line chart with map, defaulting to map view
-            Chart(df).mark_line().mark_map().show("map").encode(...)
-
-            # Line chart with customized map
-            Chart(df).mark_line().mark_map(
-                color_scheme='Reds',
-                binning_strategy='manual',
-                custom_numeric_values=[0, 1000, 10000, 100000]
-            ).encode(...)
-
-            # Map focused on Africa
-            Chart(df).mark_map(region="Africa").encode(...)
-            ```
-        """
-        self._state.hasMapTab = True
-
-        # Set default tab to map if this is the first mark_*() call
-        if self._state.tab == "chart":  # Default value means not yet set
-            self._state.tab = "map"
-
-        # Configure map options if any provided
-        if any(
-            [
-                time_tolerance,
-                color_scheme,
-                binning_strategy,
-                custom_numeric_values,
-                region,
-            ]
-        ):
-            color_scale = ColorScaleConfig(
-                baseColorScheme=color_scheme,
-                binningStrategy=binning_strategy,
-                customNumericValues=custom_numeric_values,
+        raise ValueError(
+            f"no {what} column found -- looked for "
+            f"{', '.join(candidates)}. Pass {what}='<column>' to say which "
+            "column it is"
+            + (
+                ', or add one with df.assign(entity="World")'
+                if what == "entity"
+                else ""
             )
-            self._state.map = MapConfig(
-                timeTolerance=time_tolerance,
-                region=region,
-                colorScale=color_scale
-                if any([color_scheme, binning_strategy, custom_numeric_values])
-                else None,
-            )
-
-        return self
-
-    def show(
-        self,
-        tab: Literal[
-            "line",
-            "discrete-bar",
-            "stacked-discrete-bar",
-            "scatter",
-            "stacked-area",
-            "slope",
-            "stacked-bar",
-            "marimekko",
-            "map",
-            "table",
-        ],
-    ) -> "Chart":
-        """Set which tab to display by default.
-
-        Use this to control which visualization is shown when the chart first loads.
-        The tab must correspond to an enabled chart type (via mark_*() methods).
-
-        Args:
-            tab: The tab to show by default. Options:
-                - "line": Line chart
-                - "discrete-bar": Bar chart
-                - "stacked-discrete-bar": Stacked bar chart
-                - "scatter": Scatter plot
-                - "map": World map
-                - "table": Data table
-
-        Returns:
-            Self for method chaining.
-
-        Example:
-            ```python
-            # Enable line and bar, but show bar by default
-            Chart(df).mark_line().mark_bar().show("discrete-bar").encode(...)
-            ```
-        """
-        self._state.tab = tab
-        return self
-
-    def interact(
-        self,
-        allow_relative: Optional[bool] = None,
-        scale_control: Optional[bool] = None,
-        entity_control: Optional[bool] = None,
-        entity_mode: Optional[EntitySelectionMode] = None,
-    ) -> "Chart":
-        """Add interactive controls to the chart.
-
-        Args:
-            allow_relative: Show relative/absolute toggle.
-            scale_control: Show log/linear scale toggle.
-            entity_control: Show entity/country picker (shorthand for entity_mode).
-            entity_mode: Entity selection mode. Options:
-                - "add-country": Allow adding multiple entities (default when entity_control=True)
-                - "change-country": Allow only single entity selection (useful for
-                  charts with multiple lines per entity, e.g., confidence intervals)
-                - "disabled": Disable entity selection
-
-        Returns:
-            Self for method chaining.
-        """
-        if allow_relative is not None:
-            self._state.hideRelativeToggle = False
-
-        if scale_control is not None:
-            # Update yAxis without overwriting existing settings
-            assert self._state.yAxis is not None  # Initialized in __init__
-            self._state.yAxis.scaleType = "linear"
-            self._state.yAxis.canChangeScaleType = scale_control
-
-        if entity_mode is not None:
-            self._state.addCountryMode = entity_mode
-        elif entity_control is not None:
-            self._state.addCountryMode = "add-country" if entity_control else "disabled"
-
-        return self
-
-    def select(
-        self,
-        entities: Optional[List[str]] = None,
-        timespan: Optional[Tuple[Any, Any]] = None,
-    ) -> "Chart":
-        """Pre-select entities and time range.
-
-        Args:
-            entities: List of entity names to display.
-            timespan: Tuple of (start, end) for time range.
-
-        Returns:
-            Self for method chaining.
-        """
-        if entities:
-            self.selection = entities
-
-        if timespan:
-            if isinstance(timespan, (str, int)):
-                timespan = (timespan, None)
-            self.timespan = timespan
-
-        return self
-
-    def transform(self, relative: bool) -> "Chart":
-        """Transform data to relative or absolute values.
-
-        Display values as percentage change from a baseline (relative mode) or as
-        absolute values (default). In relative mode, the first time period serves
-        as the baseline (100%).
-
-        Args:
-            relative: If True, show values as percentage change from baseline.
-                If False, show absolute values.
-
-        Returns:
-            Self for method chaining.
-        """
-        self._state.stackMode = "relative" if relative else "absolute"
-        return self
-
-    def filter(self, matching_entities_only: bool = True) -> "Chart":
-        """Filter entities to only show those with complete data.
-
-        When enabled, only entities that have data for all time periods and dimensions
-        will be shown. Useful for ensuring fair comparisons by excluding entities with
-        incomplete data.
-
-        Args:
-            matching_entities_only: If True, only show entities with complete data across
-                all dimensions and time periods. If False, show all entities even with gaps.
-
-        Returns:
-            Self for method chaining.
-        """
-        self._state.matchingEntitiesOnly = matching_entities_only
-        return self
-
-    def variable(
-        self,
-        column: str,
-        name: Optional[str] = None,
-        description_short: Optional[str] = None,
-        description_from_producer: Optional[str] = None,
-        description_processing: Optional[str] = None,
-        description_key: Optional[List[str]] = None,
-        unit: Optional[str] = None,
-        short_unit: Optional[str] = None,
-        color: Optional[str] = None,
-        source_name: Optional[str] = None,
-        source_link: Optional[str] = None,
-    ) -> "Chart":
-        """Add rich metadata to a data column/variable.
-
-        Configures display properties and documentation for a column that will
-        appear in tooltips, the data table, and source information.
-
-        Args:
-            column: Name of the DataFrame column to configure.
-            name: Display name (e.g., "Population" instead of "pop").
-            description_short: Brief description shown in tooltips.
-            description_from_producer: Original description from data source.
-            description_processing: How the data was processed/transformed.
-            description_key: List of key points about the variable.
-            unit: Full unit name (e.g., "million people").
-            short_unit: Abbreviated unit for compact display (e.g., "M").
-            color: Hex color for the line/series (e.g., "#ca2628").
-            source_name: Name of the data source.
-            source_link: URL to the data source.
-
-        Returns:
-            Self for method chaining.
-
-        Note:
-            The timespan is computed automatically from the data's time column.
-
-        Example:
-            ```python
-            Chart(df).mark_line().encode(
-                x='year',
-                y='population',
-                entity='country'
-            ).variable(
-                'population',
-                name='Population',
-                description_short='Total population in millions',
-                unit='million people',
-                short_unit='M',
-                source_name='World Bank',
-                source_link='https://data.worldbank.org'
-            )
-            ```
-        """
-        self.variable_configs[column] = VariableConfig(
-            name=name,
-            description_short=description_short,
-            description_from_producer=description_from_producer,
-            description_processing=description_processing,
-            description_key=description_key,
-            unit=unit,
-            short_unit=short_unit,
-            color=color,
-            source_name=source_name,
-            source_link=source_link,
         )
-        return self
 
-    def _repr_html_(self):
-        export = self.export()
-        html = generate_iframe(
-            export["csv_data"], export["column_defs"], export["grapher_config"]
+    def _shaped(self) -> pd.DataFrame:
+        """The DataFrame as Grapher's table parser wants it."""
+        entity = self._resolve(self.entity, ENTITY_COLUMNS, "entity")
+        time = self._resolve(self.time, TIME_COLUMNS, "time")
+
+        renamed = {entity: "entityName"}
+        # Years arrive as numbers, dates as strings or datetimes; Grapher tells
+        # the two apart by the column name, not by the values.
+        is_dates = not pd.api.types.is_numeric_dtype(self.data[time])
+        renamed[time] = "date" if is_dates else "year"
+
+        # Value column names become Grapher slugs, so drop what slugs can't hold.
+        renamed.update(
+            {
+                column: _sanitize_slug(column)
+                for column in self.data.columns
+                if column not in renamed and _UNSAFE_SLUG_CHARS.search(str(column))
+            }
         )
-        return html
+        return self.data.rename(columns=renamed)
 
-    def _get_primary_chart_type(self) -> "ChartType":
-        """Get the primary chart type (first in the list, or LineChart as default)."""
-        if self._state.chartTypes:
-            return self._state.chartTypes[0]
-        return "LineChart"
+    def _column_defs(self, shaped: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Grapher's OwidColumnDefs, one per annotated column.
 
-    def _prepare_data(
-        self,
-    ) -> Tuple[
-        pd.DataFrame,
-        str,
-        List[str],
-        Optional[str],
-        Optional[str],
-        Optional[str],
-        List[str],
-        Optional[Any],
-        Optional[int],
-    ]:
-        """Prepare the dataframe and compute column mappings for export.
-
-        Returns a tuple of:
-            (df, x_col, y_cols, entity_col, color_col, year_col, selected_entities, min_time, max_time)
+        Only the columns `columns=` mentions: Grapher works out the type and
+        formatting of the rest from their values, and does it well.
         """
-        if not self.x or not self.y:
-            raise ValueError("must provide an x and y encoding")
-
-        df = self.data.copy()
-        x_col = self.x
-        y_col = self.y
-        entity_col = self.entity
-        color_col = self.color
-        size_col = self.size
-        chart_type = self._get_primary_chart_type()
-
-        # Sanitize column names (special characters break OWID's slug format)
-        rename_map = {
-            col: _sanitize_slug(col)
-            for col in df.columns
-            if _UNSAFE_SLUG_CHARS.search(col)
+        value_columns = {
+            str(column) for column in shaped.columns if column not in GRAPHER_COLUMNS
         }
-        if rename_map:
-            df = df.rename(columns=rename_map)
-            if x_col in rename_map:
-                x_col = rename_map[x_col]
-            if y_col in rename_map:
-                y_col = rename_map[y_col]
-            if entity_col and entity_col in rename_map:
-                entity_col = rename_map[entity_col]
-            if color_col and color_col in rename_map:
-                color_col = rename_map[color_col]
-            if size_col and size_col in rename_map:
-                size_col = rename_map[size_col]
+        defined = {
+            _sanitize_slug(slug): fields for slug, fields in self.columns.items()
+        }
 
-        # Determine column mappings based on chart type
-        year_col: Optional[str] = None
-        y_cols: List[str]
-        selected_entities: List[str]
-
-        # Multi-indicator y only makes sense where series share a value axis (line/area).
-        # Scatter and discrete-bar charts would silently use just the first column, so
-        # reject a list there instead of dropping the rest.
-        if self.y_extra and chart_type in (
-            "ScatterPlot",
-            "DiscreteBar",
-            "StackedDiscreteBar",
-        ):
+        unknown = set(defined) - value_columns
+        if unknown:
             raise ValueError(
-                f"a list of y columns (multi-indicator) is supported for line/area "
-                f"charts, not {chart_type}"
+                "columns= names columns that aren't in the DataFrame: "
+                + ", ".join(sorted(unknown))
             )
 
-        if chart_type == "ScatterPlot":
-            y_cols = [x_col, y_col]  # Both are "value" columns for scatter
-            if self.selection is None:
-                selected_entities = []  # Don't auto-select for scatter plots
-            else:
-                selected_entities = self.selection
-            if "year" in df.columns:
-                year_col = "year"
-        elif chart_type in ("DiscreteBar", "StackedDiscreteBar"):
-            if entity_col:
-                y_cols = [y_col]
-                if self.selection is None:
-                    selected_entities = list(df[entity_col].unique())
-                else:
-                    selected_entities = self.selection
-            else:
-                # Fall back to y as entity, x as value (horizontal bars)
-                entity_col = y_col
-                y_cols = [x_col]
-                if self.selection is None:
-                    selected_entities = list(df[y_col].unique())
-                else:
-                    selected_entities = self.selection
-        else:
-            # Line charts: x is time, y is value, entity is grouping
-            y_cols = [y_col]
-            # Additional y indicators (multi-indicator charts) → one extra series each
-            for ey in self.y_extra:
-                y_cols.append(rename_map.get(ey, ey))
-            # Add confidence interval columns if specified
-            if self.y_lower:
-                y_lower_col = rename_map.get(self.y_lower, self.y_lower)
-                y_cols.append(y_lower_col)
-            if self.y_upper:
-                y_upper_col = rename_map.get(self.y_upper, self.y_upper)
-                y_cols.append(y_upper_col)
-            if self.selection is None:
-                if entity_col:
-                    # entities x indicators is unreadable with several indicators, so
-                    # default to a single reference entity instead of every entity.
-                    if self.y_extra:
-                        selected_entities = _default_multi_indicator_entities(
-                            df, entity_col
-                        )
-                    else:
-                        selected_entities = list(df[entity_col].unique())
-                else:
-                    selected_entities = [y_col]  # Use column name as entity
-            else:
-                selected_entities = self.selection
-
-        # Handle timespan
-        min_time: Optional[Any] = None
-        max_time: Optional[int] = None
-        if self.timespan:
-            timespan = self.timespan
-            if self.time_type == TimeType.DAY:
-                timespan = _timespan_from_date(timespan)
-            min_time, max_time = timespan
-
-        # For scatter plots, default to 'latest'
-        if chart_type == "ScatterPlot" and min_time is None:
-            min_time = "latest"
-
-        # Rename entity column to entityName for OwidTable
-        if entity_col and entity_col in df.columns:
-            df = df.rename(columns={entity_col: "entityName"})
-
-        # Rename x column to expected time column name for OwidTable
-        if chart_type not in ("ScatterPlot", "DiscreteBar", "StackedDiscreteBar"):
-            expected_time_col = "date" if self.time_type == TimeType.DAY else "year"
-            if x_col != expected_time_col and x_col in df.columns:
-                df = df.rename(columns={x_col: expected_time_col})
-
-        return (
-            df,
-            x_col,
-            y_cols,
-            entity_col,
-            color_col,
-            year_col,
-            selected_entities,
-            min_time,
-            max_time,
-        )
-
-    def _build_csv(self, df: pd.DataFrame) -> str:
-        """Build CSV string from prepared dataframe."""
-        return df.to_csv(index=False)
-
-    def _build_column_defs(
-        self, y_cols: List[str], x_col: str, year_col: Optional[str]
-    ) -> List[Dict[str, Any]]:
-        """Build column definitions for OwidTable."""
-        chart_type = self._get_primary_chart_type()
-        display = DATE_DISPLAY if self.time_type == TimeType.DAY else {}
-
-        column_defs: List[Dict[str, Any]] = []
-        for col in y_cols:
-            col_display = display.copy()
-
-            # Apply units based on chart type
-            if chart_type == "ScatterPlot":
-                if col == y_cols[0] and self.x_unit:
-                    col_display["unit"] = self.x_unit
-                elif col == y_cols[1] and self.y_unit:
-                    col_display["unit"] = self.y_unit
-            else:
-                if self.y_unit:
-                    col_display["unit"] = self.y_unit
-
-            col_def: Dict[str, Any] = {"slug": col, "type": "Numeric"}
-            if col_display:
-                col_def["display"] = col_display
-
-            # Add rich metadata from variable_configs if available
-            if col in self.variable_configs:
-                var_config = self.variable_configs[col]
-                var_dict = var_config.to_dict()  # type: ignore
-                col_def.update(var_dict)
-
-                # Auto-compute timespan from the time column
-                time_col = year_col if chart_type == "ScatterPlot" else x_col
-                if time_col and time_col in self.data.columns:
-                    min_val = self.data[time_col].min()
-                    max_val = self.data[time_col].max()
-                    if min_val == max_val:
-                        col_def["timespan"] = str(min_val)
-                    else:
-                        col_def["timespan"] = f"{min_val}–{max_val}"
-
-            # Set shortUnit from y_unit if not explicitly set via variable().
-            # The display["unit"] only affects tooltips/text, while shortUnit
-            # is what actually appears on y-axis tick labels (e.g., "10 billion t").
-            if chart_type == "ScatterPlot":
-                if col == y_cols[0] and self.x_unit:
-                    col_def.setdefault("shortUnit", self.x_unit)
-                elif col == y_cols[1] and self.y_unit:
-                    col_def.setdefault("shortUnit", self.y_unit)
-            else:
-                if self.y_unit:
-                    col_def.setdefault("shortUnit", self.y_unit)
-
-            column_defs.append(col_def)
-
-        return column_defs
-
-    def _build_grapher_config(
-        self,
-        y_cols: List[str],
-        x_col: str,
-        color_col: Optional[str],
-        selected_entities: List[str],
-        min_time: Optional[Any],
-        max_time: Optional[int],
-    ) -> Dict[str, Any]:
-        """Build GrapherState configuration dict by merging stored config with computed values."""
-        # Default to LineChart if no chart types specified
-        if not self._state.chartTypes:
-            self._state.chartTypes = ["LineChart"]
-
-        chart_type = self._get_primary_chart_type()
-        is_scatter = chart_type == "ScatterPlot"
-
-        # Update state with computed values
-        self._state.selectedEntityNames = selected_entities
-
-        # Set default tab if not already set
-        if self._state.tab == "chart" and self._state.chartTypes:
-            self._state.tab = _CHART_TYPE_TO_TAB.get(self._state.chartTypes[0], "line")  # type: ignore
-
-        # Set column slugs based on chart type
-        if is_scatter:
-            self._state.ySlugs = y_cols[1]  # y-axis value
-            self._state.xSlug = y_cols[0]  # x-axis value
-        else:
-            self._state.ySlugs = " ".join(y_cols)
-
-        # Time bounds
-        if min_time is not None:
-            self._state.minTime = min_time
-        if max_time is not None:
-            self._state.maxTime = max_time
-
-        # Additional slugs
-        if self.size:
-            self._state.sizeSlug = self.size
-        if color_col:
-            self._state.colorSlug = color_col
-
-        # Auto-set map columnSlug from the first y column if not specified
-        if (
-            self._state.map is not None
-            and self._state.map.columnSlug is None
-            and y_cols
-        ):
-            self._state.map.columnSlug = y_cols[0]
-
-        return self._state.to_dict()
+        return [
+            {
+                "slug": slug,
+                # A column def without a type turns off Grapher's own type
+                # detection for that column, which leaves it unformatted and
+                # unplottable -- so fill one in from the DataFrame.
+                "type": (
+                    "Numeric"
+                    if pd.api.types.is_numeric_dtype(shaped[slug])
+                    else "String"
+                ),
+                **fields,
+            }
+            for slug, fields in defined.items()
+        ]
 
     def export(self) -> Dict[str, Any]:
-        """Export the chart as the three components needed for rendering.
-
-        Returns:
-            Dictionary with keys:
-                - csv_data: CSV string of the data
-                - column_defs: List of column definition dicts for OwidTable
-                - grapher_config: Dict of GrapherState configuration
-        """
-        (
-            df,
-            x_col,
-            y_cols,
-            entity_col,
-            color_col,
-            year_col,
-            selected_entities,
-            min_time,
-            max_time,
-        ) = self._prepare_data()
+        """The three things Grapher's loader needs: CSV, column defs, config."""
+        shaped = self._shaped()
+        config = dict(self.config)
+        # Line and bar charts draw nothing until entities are selected, and the
+        # frame someone handed us is the selection they mean.
+        config.setdefault("selectedEntityNames", list(shaped.entityName.unique()))
 
         return {
-            "csv_data": self._build_csv(df),
-            "column_defs": self._build_column_defs(y_cols, x_col, year_col),
-            "grapher_config": self._build_grapher_config(
-                y_cols, x_col, color_col, selected_entities, min_time, max_time
-            ),
+            "csv_data": shaped.to_csv(index=False),
+            "column_defs": self._column_defs(shaped),
+            "grapher_config": config,
         }
+
+    # -- rendering ----------------------------------------------------------
+
+    def to_html(self) -> str:
+        """The chart as a standalone HTML page.
+
+        Save it to a file and open it in a browser, or embed it in a page of
+        your own.
+        """
+        export = self.export()
+        return _generate_chart_html(
+            export["csv_data"], export["column_defs"], export["grapher_config"]
+        )
+
+    def _repr_html_(self) -> str:
+        export = self.export()
+        return generate_iframe(
+            export["csv_data"],
+            export["column_defs"],
+            export["grapher_config"],
+            height=self.height,
+        )
 
     def save_png(
         self, path: str, include_details: bool = False, timeout: int = 30000
     ) -> None:
-        """Save the chart as a PNG image.
-
-        This method uses Playwright to render the chart in a headless browser
-        and export it using the Grapher's built-in rasterize function.
-
-        Args:
-            path: File path to save the PNG.
-            include_details: Whether to include chart details/sources in export.
-            timeout: Timeout in milliseconds for rendering.
-
-        Raises:
-            ImportError: If Playwright is not installed. Install with:
-                pip install playwright && playwright install chromium
-
-        Example:
-            ```python
-            chart = Chart(df).mark_line().encode(x='year', y='population')
-            chart.save_png("my_chart.png")
-            ```
-        """
+        """Render the chart to a PNG file (needs playwright)."""
         from owid.grapher.export import save_png
 
         save_png(self, path, include_details=include_details, timeout=timeout)
@@ -1044,115 +310,33 @@ class Chart:
     def save_svg(
         self, path: str, include_details: bool = False, timeout: int = 30000
     ) -> None:
-        """Save the chart as an SVG image.
-
-        This method uses Playwright to render the chart in a headless browser
-        and export it using the Grapher's built-in rasterize function.
-
-        Args:
-            path: File path to save the SVG.
-            include_details: Whether to include chart details/sources in export.
-            timeout: Timeout in milliseconds for rendering.
-
-        Raises:
-            ImportError: If Playwright is not installed. Install with:
-                pip install playwright && playwright install chromium
-
-        Example:
-            ```python
-            chart = Chart(df).mark_line().encode(x='year', y='population')
-            chart.save_svg("my_chart.svg")
-            ```
-        """
+        """Render the chart to an SVG file (needs playwright)."""
         from owid.grapher.export import save_svg
 
         save_svg(self, path, include_details=include_details, timeout=timeout)
 
-    def to_html(self) -> str:
-        """Return the full HTML page for this chart.
 
-        This returns a complete HTML document that can be:
-        - Saved to a file and opened in a browser
-        - Embedded in an iframe on a webpage
-        - Used for custom rendering scenarios
+def _reject_unknown_keys(config: Mapping[str, Any]) -> None:
+    """Complain about config keys Grapher doesn't have.
 
-        Returns:
-            Complete HTML document string.
+    A type checker catches these when there is one; in a notebook there isn't,
+    and Grapher silently ignores a key it doesn't know.
+    """
+    unknown = [key for key in config if key not in CONFIG_KEYS]
+    if not unknown:
+        return
 
-        Example:
-            ```python
-            chart = Chart(df).mark_line().encode(x='year', y='population')
-
-            # Save to file
-            with open("chart.html", "w") as f:
-                f.write(chart.to_html())
-            ```
-        """
-        export = self.export()
-        return _generate_chart_html(
-            export["csv_data"],
-            export["column_defs"],
-            export["grapher_config"],
+    described = []
+    for key in sorted(unknown):
+        close = difflib.get_close_matches(key, CONFIG_KEYS, n=1)
+        described.append(
+            f"{key!r}" + (f" (did you mean {close[0]!r}?)" if close else "")
         )
-
-
-class TimeType(Enum):
-    """Enumeration for time dimension types.
-
-    Determines how time values are interpreted and displayed in charts.
-
-    Attributes:
-        DAY: Daily or date-based data. Automatically detected when x='date'.
-            Uses ISO date format (YYYY-MM-DD).
-        YEAR: Annual data (default). Standard yearly time series.
-    """
-
-    DAY = "day"
-    YEAR = "year"
-
-
-ChartType = Literal["LineChart", "DiscreteBar", "ScatterPlot", "StackedDiscreteBar"]
-"""Type alias for supported chart types.
-
-Chart types:
-    - LineChart: Time series line chart
-    - DiscreteBar: Bar chart (side-by-side bars)
-    - StackedDiscreteBar: Stacked bar chart
-    - ScatterPlot: Scatter plot with x/y numeric dimensions
-"""
-
-
-@pruned_camel_json
-@dataclass
-class VariableConfig:
-    """Configuration for a data variable/column.
-
-    Provides rich metadata for a column that appears in the chart's data table
-    and tooltips. Maps to OWID's columnDefs format.
-
-    Attributes:
-        name: Display name for the variable (e.g., "Population").
-        description_short: Brief description shown in tooltips.
-        description_from_producer: Original description from data source.
-        description_processing: How the data was processed/transformed.
-        description_key: List of key points about the variable.
-        unit: Full unit name (e.g., "million people").
-        short_unit: Abbreviated unit (e.g., "M").
-        color: Hex color for the line/series (e.g., "#ca2628").
-        source_name: Name of the data source.
-        source_link: URL to the data source.
-    """
-
-    name: Optional[str] = None
-    description_short: Optional[str] = None
-    description_from_producer: Optional[str] = None
-    description_processing: Optional[str] = None
-    description_key: Optional[List[str]] = None
-    unit: Optional[str] = None
-    short_unit: Optional[str] = None
-    color: Optional[str] = None
-    source_name: Optional[str] = None
-    source_link: Optional[str] = None
+    raise ValueError(
+        "not Grapher config keys: "
+        + ", ".join(described)
+        + ". See owid.grapher.config.GrapherConfig for the full list."
+    )
 
 
 def _generate_chart_html(
@@ -1162,7 +346,6 @@ def _generate_chart_html(
     *,
     expose_state: bool = False,
     hide_ui_elements: bool = False,
-    show_error_div: bool = False,
 ) -> str:
     """Generate HTML page for rendering the chart.
 
@@ -1170,12 +353,12 @@ def _generate_chart_html(
     for Jupyter rendering and _generate_export_html() for headless export.
 
     Args:
-        csv_data: CSV string of the data (should be escaped for JS template literal)
-        column_defs: List of column definition dicts for OwidTable
-        grapher_config: Dict of GrapherState configuration
-        expose_state: If True, expose grapherState globally for export scripts
+        csv_data: CSV string of the data
+        column_defs: Grapher's column definitions, one per value column
+        grapher_config: Grapher's chart config, as a dict
+        expose_state: If True, expose the loader's grapherState globally for
+            export scripts, together with a window.grapherReady flag
         hide_ui_elements: If True, hide ActionButtons and learn-more-about-data
-        show_error_div: If True, show error div on initialization failure
 
     Returns:
         Complete HTML document string.
@@ -1194,89 +377,74 @@ def _generate_chart_html(
       .ActionButtons { display: none !important; }
       .learn-more-about-data { display: none !important; }"""
 
-    # Error div CSS
-    error_css = ""
-    if show_error_div:
-        error_css = """
-      .error { color: red; padding: 20px; background: #fee; border-radius: 5px; }"""
-
-    # Error handling JS
-    error_js = ""
-    if show_error_div:
-        error_js = """
-        container.innerHTML = '<div class="error">Required exports not available. Check console.</div>';"""
-
     # Expose state JS for export
     expose_state_js = ""
-    ready_signal_js = ""
     if expose_state:
         expose_state_js = """
-      // Expose grapherState globally for the export script
-      window.grapherState = grapherState;"""
-        ready_signal_js = """
-      // Signal that rendering is complete
+      // Hand the chart state to the export script, signalling readiness once
+      // the data has loaded and the chart has had a frame to render.
+      window.grapherState = loader.grapherState;
+      await loader.ready;
+      await new Promise(requestAnimationFrame);
       window.grapherReady = true;"""
+
+    # Everything GrapherLoader needs, as one JSON blob. "</" is escaped so a
+    # "</script>" inside the data can't close the script element early.
+    loader_options = json.dumps(
+        {"config": grapher_config, "csv": csv_data, "columnDefs": column_defs},
+        indent=2,
+    ).replace("</", "<\\/")
 
     return f"""<!DOCTYPE html>
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link
-      href="https://fonts.googleapis.com/css?family=Lato:300,400,400i,700,700i|Playfair+Display:400,700&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      rel="stylesheet"
-      href="https://ourworldindata.org/assets/owid.css"
-    />
+    <link rel="stylesheet" href="https://ourworldindata.org/fonts.css" />
+    <link rel="stylesheet" href="{GRAPHER_BUNDLE_URL}/grapher.css" />
     <style>
-      body {{ margin: 0; padding: 0; }}
-      figure {{ width: 100%; height: 100%; margin: 0; }}{error_css}{hide_ui_css}
+      html, body {{ height: 100%; margin: 0; padding: 0; }}
+      figure {{ width: 100%; height: 100%; margin: 0; }}
+      .error {{ color: red; padding: 20px; background: #fee; border-radius: 5px; }}{hide_ui_css}
       {hide_sources_css}
     </style>
   </head>
   <body>
     <figure id="grapher-container"></figure>
-    <script type="module" src="https://ourworldindata.org/assets/owid.mjs"></script>
     <script type="module">
-      // Wait for the module to load
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const {{ Grapher, GrapherState, OwidTable, React, createRoot }} = window;
       const container = document.getElementById("grapher-container");
 
-      if (!GrapherState || !OwidTable || !React || !createRoot) {{{error_js}
-        throw new Error("Required exports not available");
+      let GrapherLoader;
+      try {{
+        ({{ GrapherLoader }} = await import(
+          "{GRAPHER_BUNDLE_URL}/grapher.standalone.min.js"
+        ));
+      }} catch (error) {{
+        container.innerHTML =
+          '<div class="error">Could not load Grapher from {GRAPHER_BUNDLE_URL} ' +
+          '- while the npm package is private, that host is only reachable ' +
+          'from the OWID Tailnet.</div>';
+        throw error;
       }}
 
-      const csvData = `{csv_data}`;
-      const columnDefs = {json.dumps(column_defs)};
-      const table = new OwidTable(csvData, columnDefs);
-
-      const grapherState = new GrapherState({{
-        table: table,
-        ...{json.dumps(grapher_config)},
-        isConfigReady: true,
-        isDataReady: true,
-      }});
-{expose_state_js}
-      const reactRoot = createRoot(container);
-      reactRoot.render(React.createElement(Grapher, {{ grapherState }}));
-{ready_signal_js}
+      const loader = GrapherLoader.fromCsv({loader_options}).mount(container);{expose_state_js}
     </script>
   </body>
 </html>"""
 
 
 def generate_iframe(
-    csv_data: str, column_defs: List[Dict[str, Any]], grapher_config: Dict[str, Any]
+    csv_data: str,
+    column_defs: List[Dict[str, Any]],
+    grapher_config: Dict[str, Any],
+    height: int = DEFAULT_HEIGHT,
 ) -> str:
     """Generate an iframe HTML for rendering the chart.
 
     Args:
         csv_data: CSV string of the data
-        column_defs: List of column definition dicts for OwidTable
-        grapher_config: Dict of GrapherState configuration
+        column_defs: Grapher's column definitions, one per value column
+        grapher_config: Grapher's chart config, as a dict
+        height: Height of the iframe in pixels
 
     Returns:
         HTML string containing the iframe and initialization script
@@ -1288,7 +456,6 @@ def generate_iframe(
         column_defs,
         grapher_config,
         hide_ui_elements=True,
-        show_error_div=True,
     )
 
     # Escape for the outer template literal (order matters: backslash first)
@@ -1297,7 +464,7 @@ def generate_iframe(
     iframe_contents = iframe_contents.replace("${", "\\${")
     iframe_contents = iframe_contents.replace("</script>", "<\\/script>")
     return f"""
-        <div id="{iframe_name}_wrapper" style="position: relative; width: 100%; height: 600px;">
+        <div id="{iframe_name}_wrapper" style="position: relative; width: 100%; height: {height}px;">
             <iframe id="{iframe_name}" style="width: 100%; height: 100%; border: 0px none; pointer-events: none;"></iframe>
         </div>
         <script>
@@ -1312,254 +479,3 @@ def generate_iframe(
             }});
         </script>
     """  # noqa
-
-
-def _timespan_from_date(timespan: Tuple[str, str]) -> Tuple[int, int]:
-    from_date_d = parse(timespan[0]).date()
-    to_date_d = parse(timespan[1]).date()
-
-    offset = dt.date(1970, 1, 1).toordinal()
-
-    return (from_date_d.toordinal() - offset, to_date_d.toordinal() - offset)
-
-
-# Type alias for plot types
-PlotType = Literal["map", "line", "bar", "slope", "marimekko", "scatter", "stacked-bar"]
-
-# Type alias for variable configuration
-VariableConfigDict = Dict[str, Any]
-
-
-def _default_multi_indicator_entities(
-    df: pd.DataFrame, entity_col: str, n: int = 5
-) -> List[str]:
-    """Pick a default entity selection for multi-indicator charts.
-
-    Showing every entity times every indicator is unreadable, so prefer a single
-    reference entity ("World") when present; otherwise fall back to the ``n`` entities
-    with the most data. Deterministic, so the same call always renders the same chart.
-    """
-    values = list(df[entity_col].dropna())
-    entities = list(dict.fromkeys(values))  # unique, preserving first-seen order
-    if "World" in entities:
-        return ["World"]
-    # rank by data coverage (row count), deterministic on ties via the entity name.
-    # done in plain Python to avoid pandas groupby/sort_values typing ambiguity.
-    counts: Dict[Any, int] = {}
-    for v in values:
-        counts[v] = counts.get(v, 0) + 1
-    ranked = sorted(entities, key=lambda e: (-counts[e], str(e)))
-    return ranked[:n]
-
-
-def plot(
-    data: pd.DataFrame,
-    *,
-    # Column mappings
-    x: str = "year",
-    y: Union[str, List[str], Tuple[str, ...]],
-    y_lower: Optional[str] = None,
-    y_upper: Optional[str] = None,
-    entity: str = "entity",
-    color: Optional[str] = None,
-    size: Optional[str] = None,
-    # Plot types
-    types: Optional[List[PlotType]] = None,
-    # Map configuration
-    color_scheme: Optional[ColorSchemeName] = None,
-    custom_numeric_values: Optional[List[float]] = None,
-    region: Optional[MapRegionName] = None,
-    # Labels
-    title: Optional[str] = None,
-    subtitle: Optional[str] = None,
-    source: Optional[str] = None,
-    note: Optional[str] = None,
-    unit: Optional[str] = None,
-    # Variable metadata
-    variables: Optional[Dict[str, VariableConfigDict]] = None,
-    # Selection
-    entities: Optional[List[str]] = None,
-    timespan: Optional[Tuple[Any, Any]] = None,
-    # Interactivity
-    scale_control: bool = False,
-    entity_control: bool = False,
-    entity_mode: Optional[EntitySelectionMode] = None,
-    allow_relative: bool = False,
-) -> Chart:
-    """Create an OWID chart with a single function call.
-
-    This is a convenience wrapper around the Chart class that provides a simpler,
-    more concise API for common chart configurations.
-
-    Args:
-        data: A pandas DataFrame containing the data to visualize.
-        x: Column name for x-axis (default: "year").
-        y: Column name for y-axis values.
-        y_lower: Column name for lower bound of confidence interval.
-        y_upper: Column name for upper bound of confidence interval.
-        entity: Column name for grouping data (default: "entity").
-        color: Column name for color encoding (scatter plots).
-        size: Column name for size encoding (scatter plots).
-        types: List of plot types to enable. First type is shown by default.
-            Options: "map", "line", "bar", "slope", "marimekko", "scatter", "stacked-bar".
-            If not specified, defaults to ["line", "bar"] for time series data.
-        color_scheme: Color scheme for map visualization (e.g., "GnBu", "Reds").
-        custom_numeric_values: Custom bin boundaries for map legend.
-            When provided, uses manual binning strategy automatically.
-        region: Map region to focus on. Options: "World" (default), "Africa",
-            "NorthAmerica", "SouthAmerica", "Asia", "Europe", "Oceania".
-        title: Chart title.
-        subtitle: Chart subtitle.
-        source: Data source attribution (displayed as sourceDesc).
-        note: Additional notes or footnotes.
-        unit: Unit suffix for y-axis values (e.g., "$", "%", "t").
-        variables: Dict mapping column names to variable configuration. Each config
-            can include: name, description_short, unit, short_unit, color,
-            source_name, source_link. Example:
-            {"temperature": {"name": "Temperature", "color": "#ca2628", "unit": "°C"}}
-        entities: List of entity names to pre-select.
-        timespan: Tuple of (start, end) for time range filter.
-        scale_control: If True, shows log/linear scale toggle.
-        entity_control: If True, shows entity/country picker.
-        entity_mode: Entity selection mode ("add-country", "change-country", "disabled").
-            Use "change-country" for charts with confidence intervals.
-        allow_relative: If True, shows relative/absolute toggle.
-
-    Returns:
-        A configured Chart object ready for display in Jupyter.
-
-    Example:
-        ```python
-        import pandas as pd
-        from owid.grapher import plot
-
-        # Basic chart
-        plot(
-            df,
-            y="gdp_per_capita",
-            types=["map", "line", "bar"],
-            color_scheme="GnBu",
-            custom_numeric_values=[0, 1000, 5000, 10000, 50000],
-            unit="$",
-            title="GDP per capita",
-            entities=["United States", "China", "India"],
-            scale_control=True,
-            entity_control=True,
-        )
-
-        # Chart with confidence intervals
-        plot(
-            df_temp,
-            y="temperature",
-            y_lower="temperature_lower",
-            y_upper="temperature_upper",
-            types=["line"],
-            unit="°C",
-            variables={
-                "temperature": {"name": "Average", "color": "#ca2628"},
-                "temperature_lower": {"name": "Lower bound (95% CI)", "color": "#c8c8c8"},
-                "temperature_upper": {"name": "Upper bound (95% CI)", "color": "#c8c8c8"},
-            },
-            entity_mode="change-country",
-        )
-        ```
-    """
-    chart = Chart(data)
-
-    # Determine plot types
-    if types is None:
-        types = ["line", "bar"]  # Default for time series
-
-    # Map of type name to mark method
-    type_to_mark = {
-        "line": chart.mark_line,
-        "bar": chart.mark_bar,
-        "slope": chart.mark_slope,
-        "marimekko": chart.mark_marimekko,
-        "scatter": chart.mark_scatter,
-        "stacked-bar": lambda: chart.mark_bar(stacked=True),
-    }
-
-    # Track if map should be the first/default tab
-    first_type = types[0] if types else None
-    map_is_first = first_type == "map"
-
-    # Apply mark methods for each type (excluding map which is handled separately)
-    for plot_type in types:
-        if plot_type == "map":
-            continue
-        if plot_type in type_to_mark:
-            type_to_mark[plot_type]()
-
-    # Handle map configuration
-    if "map" in types:
-        binning_strategy: Optional[BinningStrategy] = None
-        if custom_numeric_values:
-            binning_strategy = "manual"
-
-        chart.mark_map(
-            color_scheme=color_scheme,
-            binning_strategy=binning_strategy,
-            custom_numeric_values=custom_numeric_values,
-            region=region,
-        )
-
-    # If map should be the default tab, set it explicitly
-    if map_is_first:
-        chart.show("map")
-
-    # Apply encoding (including confidence intervals)
-    chart.encode(
-        x=x,
-        y=y,
-        y_lower=y_lower,
-        y_upper=y_upper,
-        entity=entity,
-        color=color,
-        size=size,
-    )
-
-    # Apply variable metadata
-    if variables:
-        for col, config in variables.items():
-            chart.variable(
-                col,
-                name=config.get("name"),
-                description_short=config.get("description_short"),
-                description_from_producer=config.get("description_from_producer"),
-                description_processing=config.get("description_processing"),
-                description_key=config.get("description_key"),
-                unit=config.get("unit"),
-                short_unit=config.get("short_unit"),
-                color=config.get("color"),
-                source_name=config.get("source_name"),
-                source_link=config.get("source_link"),
-            )
-
-    # Apply labels
-    if title or subtitle or source or note:
-        chart.label(
-            title=title or "",
-            subtitle=subtitle or "",
-            source_desc=source or "",
-            note=note or "",
-        )
-
-    # Apply unit
-    if unit:
-        chart.yaxis(unit=unit)
-
-    # Apply selection
-    if entities or timespan:
-        chart.select(entities=entities, timespan=timespan)
-
-    # Apply interactivity
-    if scale_control or entity_control or entity_mode or allow_relative:
-        chart.interact(
-            scale_control=scale_control if scale_control else None,
-            entity_control=entity_control if entity_control else None,
-            entity_mode=entity_mode,
-            allow_relative=allow_relative if allow_relative else None,
-        )
-
-    return chart

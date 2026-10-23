@@ -1,3 +1,5 @@
 ::: owid.grapher.Chart
 
-::: owid.grapher.TimeType
+::: owid.grapher.config.GrapherConfig
+
+::: owid.grapher.config.ColumnDef

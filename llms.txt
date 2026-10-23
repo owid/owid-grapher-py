@@ -1,30 +1,29 @@
 # owid-grapher-py
 
-> A Python library for creating interactive Our World in Data charts in Jupyter notebooks. Provides a declarative API inspired by Altair for building visualizations that render using OWID's Grapher JavaScript library.
+> A Python library for creating interactive Our World in Data charts in Jupyter notebooks. A thin proxy over the @ourworldindata/grapher npm package: it shapes a pandas DataFrame into the CSV Grapher reads, and passes Grapher's own chart config through untouched.
 
 Key features:
 - Create line charts, bar charts, scatter plots, slope charts, and world maps
-- Fluent method-chaining API similar to Altair/Vega-Lite
+- One call, `Chart(df, config=..., columns=...)`, taking Grapher's own config keys
+- Config is typed by `GrapherConfig`, generated from Grapher's published JSON schema
 - Renders interactive charts directly in Jupyter notebooks
-- Fetch and visualize data from live OWID charts
+- Replay any published OWID chart's config over your own data
 - Export charts to PNG, SVG, or standalone HTML
 
 ## Documentation
 
-- [README](https://github.com/owid/owid-grapher-py/blob/master/README.md): Installation, quick start, API reference for plot() and Chart class
+- [README](https://github.com/owid/owid-grapher-py/blob/master/README.md): Installation, quick start, and how the config passthrough works
 - [Documentation Index](https://github.com/owid/owid-grapher-py/blob/master/docs/index.md): Overview and links to detailed documentation
 
 ## API Reference
 
-- [owid.grapher](https://github.com/owid/owid-grapher-py/blob/master/docs/api-reference/grapher.md): Core Chart class, plot() function, and configuration dataclasses
+- [owid.grapher](https://github.com/owid/owid-grapher-py/blob/master/docs/api-reference/grapher.md): The Chart class, and the GrapherConfig/ColumnDef types its config and columns take
 - [owid.grapher.notebook](https://github.com/owid/owid-grapher-py/blob/master/docs/api-reference/notebook.md): Tools for auto-generating notebooks from existing charts
 - [owid.site](https://github.com/owid/owid-grapher-py/blob/master/docs/api-reference/site.md): Functions to fetch chart configs and data from ourworldindata.org
 
 ## Examples
 
-- [Quickstart Notebook](https://github.com/owid/owid-grapher-py/blob/master/examples/quickstart.ipynb): Comprehensive walkthrough with basic examples
-- [Top Charts (Simple API)](https://github.com/owid/owid-grapher-py/blob/master/examples/top_charts_2025_simple.ipynb): Real OWID chart replications using plot()
-- [Top Charts (Full API)](https://github.com/owid/owid-grapher-py/blob/master/examples/top_charts_2025.ipynb): Advanced examples using Chart class with method chaining
+- [Showcase](https://github.com/owid/owid-grapher-py/blob/master/examples/showcase.py): Every chart type the package draws, each next to the code that draws it. Run it to build a browsable HTML page.
 
 ## Development
 

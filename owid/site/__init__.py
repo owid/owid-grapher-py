@@ -25,11 +25,7 @@ Example:
     df = get_chart_data(slug='life-expectancy')
 
     # Create your own visualization
-    Chart(df).mark_line().encode(
-        x='year',
-        y='value',
-        entity='entity'
-    )
+    Chart(df, config={'title': 'Life expectancy', 'ySlugs': 'value'})
     ```
 
 API Endpoints:

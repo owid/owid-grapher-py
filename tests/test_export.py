@@ -38,12 +38,7 @@ def sample_chart():
             "population": [331, 332, 333, 1400, 1410, 1420],
         }
     )
-    return (
-        Chart(df)
-        .mark_line()
-        .encode(x="year", y="population", entity="entity")
-        .label(title="Population by Country")
-    )
+    return Chart(df, config={"title": "Population by Country"})
 
 
 @pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="Playwright not installed")
