@@ -1,6 +1,6 @@
 [project]
 name = "owid-grapher-py"
-version = "0.3.5"
+version = "0.4.0"
 description = "OWID charts for rendering in Jupyter notebooks."
 readme = "README.md"
 license = { text = "MIT" }
@@ -22,7 +22,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -30,7 +29,7 @@ classifiers = [
     "Framework :: Jupyter",
     "Topic :: Scientific/Engineering :: Visualization",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "dataclasses-json>=0.6.7",
     "requests>=2.26.0",
@@ -67,7 +66,7 @@ dev-dependencies = [
     "nbconvert>=7.16.6",
     "playwright>=1.40.0",
     "nest-asyncio>=1.5.0",
-    "ty==0.0.12",
+    "ty==0.0.98",
 ]
 
 [tool.ty.src]
@@ -86,7 +85,7 @@ invalid-argument-type = "ignore"
 [tool.ruff]
 lint.extend-select = ["I"]
 lint.ignore = ["E501"]
-target-version = "py310"
+target-version = "py311"
 
 [build-system]
 requires = ["hatchling"]

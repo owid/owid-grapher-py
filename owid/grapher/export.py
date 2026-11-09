@@ -23,7 +23,7 @@ try:
 
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
-    _async_playwright = None  # type: ignore
+    _async_playwright = None
 
 
 class ExportError(Exception):
