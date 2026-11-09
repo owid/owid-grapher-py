@@ -10,7 +10,7 @@ This package uses the OWID Grapher library to render interactive charts. The API
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 - Jupyter notebook or JupyterLab
 
 ## Installing

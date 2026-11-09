@@ -22,6 +22,7 @@ from owid.grapher.grapher_state import (  # noqa: F401 - re-exported for public 
     ColorScaleConfig,
     ColorSchemeName,
     EntitySelectionMode,
+    GrapherChartType,
     GrapherState,
     MapConfig,
     MapRegionName,
@@ -713,7 +714,7 @@ class Chart:
         )
         return html
 
-    def _get_primary_chart_type(self) -> "ChartType":
+    def _get_primary_chart_type(self) -> GrapherChartType:
         """Get the primary chart type (first in the list, or LineChart as default)."""
         if self._state.chartTypes:
             return self._state.chartTypes[0]
