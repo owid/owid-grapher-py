@@ -455,6 +455,8 @@ Auto-generate more types of notebooks correctly
 
 ## Changelog
 
+- `0.4.0`
+    - Drop Python 3.10 support (end of life); require Python 3.11+
 - `0.3.5`
     - Support Python 3.13 and 3.14 (tested in CI)
 - `0.3.4`
